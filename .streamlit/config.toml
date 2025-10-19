@@ -1,9 +1,10 @@
 [theme]
-base="light"
-primaryColor="#0057b8"
-backgroundColor="#ffffff"
-secondaryBackgroundColor="#f1f5f9"
-textColor="#0f172a"
+base="dark"
+primaryColor="#FF5C00"
+backgroundColor="#0a0a0a"
+secondaryBackgroundColor="#121212"
+textColor="#FFFFFF"
+font="sans serif"
 
 [client]
 showErrorDetails=false
