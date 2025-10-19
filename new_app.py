@@ -36,11 +36,11 @@ def nav(prev=True, next=True, validate_ok=True):
     with cols[0]:
         if prev and st.button("← Back"):
             st.session_state.step = max(1, st.session_state.step - 1)
-            st.experimental_rerun()
+            st.rerun()
     with cols[1]:
         if next and st.button("Next →", type="primary", disabled=not validate_ok):
             st.session_state.step = min(6, st.session_state.step + 1)
-            st.experimental_rerun()
+            st.rerun()
 
 # ---------- Sections ----------
 def section_1():
