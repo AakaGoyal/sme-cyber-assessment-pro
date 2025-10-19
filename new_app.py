@@ -2,6 +2,83 @@ import streamlit as st
 import pandas as pd
 from datetime import datetime
 
+from fpdf import FPDF
+import io
+
+class ReportPDF(FPDF):
+    def header(self):
+        # Optional header with title
+        self.set_font("Helvetica", "B", 14)
+        self.cell(0, 8, "SME Cybersecurity Self-Assessment Report", ln=True, align="C")
+        self.ln(4)
+
+    def footer(self):
+        # Add page numbers
+        self.set_y(-15)
+        self.set_font("Helvetica", "I", 8)
+        self.cell(0, 10, f"Page {self.page_no()}", 0, 0, "C")
+
+def generate_pdf(profile: dict, scores: dict, actions: list[dict], overall: tuple[int, str]) -> bytes:
+    pdf = ReportPDF()
+    pdf.add_page()
+    pdf.set_auto_page_break(auto=True, margin=15)
+
+    # --- Section 1: Summary ---
+    pdf.set_font("Helvetica", "B", 12)
+    pdf.cell(0, 10, "Business Context Summary", ln=True)
+    pdf.set_font("Helvetica", "", 11)
+    pdf.cell(0, 8, f"Generated: {datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC')}", ln=True)
+    pdf.ln(4)
+
+    for k, v in profile.items():
+        pdf.multi_cell(0, 6, f"{k}: {v}")
+    pdf.ln(6)
+
+    # --- Section 2: Readiness Overview ---
+    pdf.set_font("Helvetica", "B", 12)
+    pdf.cell(0, 8, "Readiness Overview", ln=True)
+    pdf.set_font("Helvetica", "", 11)
+    avg, label = overall
+    pdf.multi_cell(0, 6, f"Overall Readiness: {avg}/100 ({label})")
+    pdf.ln(2)
+    for k, v in scores.items():
+        pdf.multi_cell(0, 6, f"- {k}: {v}/100 ({'Strong' if v>=75 else 'Moderate' if v>=50 else 'Weak'})")
+    pdf.ln(6)
+
+    # --- Section 3: Action Register ---
+    pdf.set_font("Helvetica", "B", 12)
+    pdf.cell(0, 8, "Priority Action Register", ln=True)
+    pdf.set_font("Helvetica", "", 11)
+    if not actions:
+        pdf.multi_cell(0, 6, "No immediate high-priority actions identified.")
+    else:
+        for i, a in enumerate(actions, 1):
+            pdf.set_font("Helvetica", "B", 11)
+            pdf.multi_cell(0, 6, f"{i}. {a['area']} — {a['action']}")
+            pdf.set_font("Helvetica", "", 10)
+            pdf.multi_cell(0, 5, f"Why: {a['why']}")
+            pdf.multi_cell(0, 5, f"How: {a['how']}")
+            pdf.ln(2)
+
+    pdf.add_page()
+    pdf.set_font("Helvetica", "B", 12)
+    pdf.cell(0, 8, "Next Steps & Notes", ln=True)
+    pdf.set_font("Helvetica", "", 11)
+    pdf.multi_cell(0, 6,
+        "This report summarises the current business context and cybersecurity posture.\n"
+        "Recommended next steps:\n"
+        "  • Address the Priority 1 actions first (within 2 weeks).\n"
+        "  • Reassess quarterly or after major IT/partner changes.\n"
+        "  • Train staff on phishing and password management.\n"
+        "  • Review vendor security agreements yearly."
+    )
+
+    # Convert to bytes
+    pdf_bytes = io.BytesIO()
+    pdf.output(pdf_bytes)
+    return pdf_bytes.getvalue()
+
+
 # ---------- Page setup ----------
 st.set_page_config(
     page_title="SME Cyber Self-Assessment – Pro",
