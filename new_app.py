@@ -1,8 +1,9 @@
 # new_app.py
 # ------------------------------------------------------------
 # SME Cyber Self-Assessment – Pro
-# Conversational business intake  → Summary → Assessment → Results
-# Exports a clean PDF report (no external storage required)
+# Conversational intake → Summary → Assessment → Results
+# Decision-grade results (traffic lights, birds-eye, right/wrong)
+# Clean PDF export (intake + assessment) — no external storage
 # Requires: streamlit==1.37+, fpdf==1.7.2
 # ------------------------------------------------------------
 
@@ -290,7 +291,6 @@ def section_summary():
         st.markdown(f"**{dom}:** {sc}/100")
         st.progress(sc/100)
 
-    # PDF export button added later (after assessment code, reusing same generator)
     st.divider()
     st.subheader("Next")
     cols = st.columns([1,1,6])
@@ -448,6 +448,56 @@ def domain_score(answers: dict, controls: list[dict]) -> int:
             yes += 1
     return int(100 * yes / total) if total else 0
 
+# ===== Traffic-light + summarizers =====
+def status_from_score(x: int) -> tuple[str, str]:
+    """Return (label, tone) where tone ∈ {'good','warn','bad'}."""
+    if x >= 75:
+        return "Good", "good"
+    if x >= 50:
+        return "Mixed", "warn"
+    return "Needs work", "bad"
+
+def badge(text: str, tone: str = "neutral") -> str:
+    colors = {
+        "good": "#16a34a",   # green-600
+        "warn": "#d97706",   # amber-600
+        "bad":  "#dc2626",   # red-600
+        "neutral": "#334155" # slate-700
+    }
+    return (
+        f"<span style='display:inline-block;padding:2px 10px;border-radius:999px;"
+        f"font-size:12px;font-weight:700;color:white;background:{colors.get(tone, '#334155')};'>"
+        f"{text}</span>"
+    )
+
+def domain_takeaway(domain: str, score: int) -> str:
+    if score >= 75:
+        return "Solid foundations in place — keep reviewing quarterly."
+    if score >= 50:
+        return "Some practices exist — standardize and close the obvious gaps."
+    return "High exposure — establish minimum controls for this area first."
+
+def extract_right_wrong(context: dict, answers: dict) -> tuple[list[dict], list[dict]]:
+    """
+    Build lists of controls answered Yes (right) and No (wrong) using the current plan.
+    N/A / Not sure etc. are ignored in both lists.
+    """
+    plan = build_assessment_plan(context)
+    rights, wrongs = [], []
+    for domain, controls in plan:
+        for c in controls:
+            v = answers.get(c["id"])
+            if v is None:
+                continue
+            b = normalize_to_bool(v)
+            if b is None:
+                continue
+            if b == 1:
+                rights.append({"area": domain, "control": c["q"]})
+            elif b == 0:
+                wrongs.append({"area": domain, "control": c["q"]})
+    return rights, wrongs
+
 # =========================
 # Assessment UI (Step 7) & Results (Step 8)
 # =========================
@@ -489,7 +539,11 @@ def section_assessment():
 
 def section_assessment_results():
     st.subheader("Assessment Results")
+
     ds = st.session_state.get("domain_scores", {})
+    ac = st.session_state.get("assessment_answers", {})
+    context = st.session_state.answers
+
     if not ds:
         st.info("No results yet. Please complete the checklist.")
         if st.button("← Back to checklist"):
@@ -497,17 +551,81 @@ def section_assessment_results():
             st.rerun()
         return
 
+    # ===== Bird’s-eye view (traffic lights)
     overall = int(sum(ds.values()) / max(1, len(ds)))
-    label = "Strong" if overall >= 75 else "Moderate" if overall >= 50 else "Needs Attention"
+    overall_label, overall_tone = status_from_score(overall)
 
-    st.markdown(f"**Overall coverage:** {overall}/100 ({label})")
+    st.markdown(
+        f"**Overall coverage:** {overall}/100 &nbsp; {badge(overall_label, overall_tone)}",
+        unsafe_allow_html=True
+    )
+
+    st.markdown("##### Bird’s-eye view by domain")
+    rows_html = ["<table style='width:100%;border-collapse:collapse'>",
+                 "<thead><tr style='text-align:left'>"
+                 "<th style='padding:8px;border-bottom:1px solid #e5e7eb'>Domain</th>"
+                 "<th style='padding:8px;border-bottom:1px solid #e5e7eb'>Coverage</th>"
+                 "<th style='padding:8px;border-bottom:1px solid #e5e7eb'>Status</th>"
+                 "<th style='padding:8px;border-bottom:1px solid #e5e7eb'>Takeaway</th>"
+                 "</tr></thead><tbody>"]
+    for domain, score in ds.items():
+        label, tone = status_from_score(score)
+        takeaway = domain_takeaway(domain, score)
+        rows_html.append(
+            "<tr>"
+            f"<td style='padding:8px;border-bottom:1px solid #f1f5f9'>{domain}</td>"
+            f"<td style='padding:8px;border-bottom:1px solid #f1f5f9'><b>{score}</b>/100</td>"
+            f"<td style='padding:8px;border-bottom:1px solid #f1f5f9'>{badge(label, tone)}</td>"
+            f"<td style='padding:8px;border-bottom:1px solid #f1f5f9'>{takeaway}</td>"
+            "</tr>"
+        )
+    rows_html.append("</tbody></table>")
+    st.markdown("".join(rows_html), unsafe_allow_html=True)
+
     st.divider()
-    st.markdown("#### Domain coverage")
+
+    # ===== Right vs Wrong lists
+    rights, wrongs = extract_right_wrong(context, ac)
+
+    col_ok, col_fix = st.columns(2)
+    with col_ok:
+        st.markdown("#### ✅ What you’re doing right")
+        if rights:
+            count = 0
+            for item in rights:
+                st.markdown(f"- **{item['area']}** — {item['control']}")
+                count += 1
+                if count >= 10:
+                    break
+            if len(rights) > 10:
+                st.caption(f"...and {len(rights) - 10} more ✓")
+        else:
+            st.caption("We didn’t detect specific confirmed controls yet.")
+
+    with col_fix:
+        st.markdown("#### ⚠️ What needs work")
+        if wrongs:
+            # Order by weakest domain first
+            domain_order = sorted(ds.items(), key=lambda kv: kv[1])
+            order_map = {d: i for i, (d, _) in enumerate(domain_order)}
+            wrongs_sorted = sorted(wrongs, key=lambda x: order_map.get(x["area"], 999))
+            for i, item in enumerate(wrongs_sorted[:10], 1):
+                st.markdown(f"- **{item['area']}** — {item['control']}")
+            if len(wrongs_sorted) > 10:
+                st.caption(f"...and {len(wrongs_sorted) - 10} more to address")
+        else:
+            st.caption("No immediate gaps flagged — nice job.")
+
+    st.divider()
+
+    # ===== Optional domain bars for detail
+    st.markdown("#### Domain coverage details")
     for k, v in ds.items():
-        st.markdown(f"**{k}:** {v}/100")
+        label, tone = status_from_score(v)
+        st.markdown(f"**{k}:** {v}/100 &nbsp; {badge(label, tone)}", unsafe_allow_html=True)
         st.progress(v/100)
 
-    st.divider()
+    # ===== Nav
     cols = st.columns([1,1,6])
     with cols[0]:
         if st.button("← Back"):
@@ -548,17 +666,28 @@ class ReportPDF(FPDF):
         self.set_font("Helvetica", "I", 8)
         self.cell(0, 10, f"Page {self.page_no()}", 0, 0, "C")
 
-def generate_pdf(profile: dict, intake_scores: dict, intake_overall: tuple[int,str],
-                 ds: dict | None = None, assessment_overall: tuple[int,str] | None = None) -> bytes:
+def pdf_status_label(score: int) -> str:
+    # ASCII-friendly traffic light labels
+    if score >= 75:
+        return "GOOD"
+    if score >= 50:
+        return "MIXED"
+    return "NEEDS WORK"
+
+def generate_pdf(profile: dict,
+                 intake_scores: dict, intake_overall: tuple[int,str],
+                 ds: dict | None = None,
+                 assessment_overall: tuple[int,str] | None = None,
+                 rights: list[dict] | None = None,
+                 wrongs: list[dict] | None = None) -> bytes:
     """
-    Create a concise, text-first PDF.
-    If ds/assessment_overall provided, include assessment results as well.
+    Create a concise, text-first PDF including traffic-light style summaries.
     """
     pdf = ReportPDF()
     pdf.add_page()
     pdf.set_auto_page_break(auto=True, margin=15)
 
-    # Summary
+    # --- Business Context
     pdf.set_font("Helvetica", "B", 12)
     pdf.cell(0, 10, clean_text("Business Context Summary"), ln=True)
     pdf.set_font("Helvetica", "", 11)
@@ -568,27 +697,47 @@ def generate_pdf(profile: dict, intake_scores: dict, intake_overall: tuple[int,s
         pdf.multi_cell(0, 6, clean_text(f"{k}: {v}"))
     pdf.ln(4)
 
-    # Intake readiness
+    # --- Intake readiness
     avg_i, label_i = intake_overall
     pdf.set_font("Helvetica", "B", 12)
     pdf.cell(0, 8, clean_text("Readiness Overview (from intake)"), ln=True)
     pdf.set_font("Helvetica", "", 11)
     pdf.multi_cell(0, 6, clean_text(f"Overall (intake): {avg_i}/100 ({label_i})"))
     for k, v in intake_scores.items():
-        band = "Strong" if v >= 75 else "Moderate" if v >= 50 else "Weak"
-        pdf.multi_cell(0, 6, clean_text(f"- {k}: {v}/100 ({band})"))
+        pdf.multi_cell(0, 6, clean_text(f"- {k}: {v}/100 ({pdf_status_label(v)})"))
     pdf.ln(4)
 
-    # Assessment results (optional)
+    # --- Assessment bird’s-eye
     if ds is not None and assessment_overall is not None:
         avg_a, label_a = assessment_overall
         pdf.set_font("Helvetica", "B", 12)
-        pdf.cell(0, 8, clean_text("Assessment Results"), ln=True)
+        pdf.cell(0, 8, clean_text("Assessment Results (bird’s-eye)"), ln=True)
         pdf.set_font("Helvetica", "", 11)
         pdf.multi_cell(0, 6, clean_text(f"Overall (assessment): {avg_a}/100 ({label_a})"))
         for k, v in ds.items():
-            band = "Strong" if v >= 75 else "Moderate" if v >= 50 else "Weak"
-            pdf.multi_cell(0, 6, clean_text(f"- {k}: {v}/100 ({band})"))
+            pdf.multi_cell(0, 6, clean_text(f"- {k}: {v}/100 ({pdf_status_label(v)})"))
+        pdf.ln(2)
+
+        # Right vs Wrong
+        if rights is not None or wrongs is not None:
+            pdf.set_font("Helvetica", "B", 12)
+            pdf.cell(0, 8, clean_text("What you’re doing right"), ln=True)
+            pdf.set_font("Helvetica", "", 11)
+            if rights:
+                for item in rights[:12]:
+                    pdf.multi_cell(0, 6, clean_text(f"- {item['area']} — {item['control']}"))
+            else:
+                pdf.multi_cell(0, 6, clean_text("No confirmed controls selected as Yes."))
+            pdf.ln(2)
+
+            pdf.set_font("Helvetica", "B", 12)
+            pdf.cell(0, 8, clean_text("What needs work"), ln=True)
+            pdf.set_font("Helvetica", "", 11)
+            if wrongs:
+                for item in wrongs[:12]:
+                    pdf.multi_cell(0, 6, clean_text(f"- {item['area']} — {item['control']}"))
+            else:
+                pdf.multi_cell(0, 6, clean_text("No immediate gaps flagged."))
 
     return pdf.output(dest="S").encode("latin-1", "ignore")
 
@@ -611,7 +760,7 @@ elif step == 6:
     # Show summary and export
     section_summary()
 
-    # Offer PDF export (includes intake metrics; also includes assessment if already done)
+    # Offer PDF export (includes intake; also includes assessment traffic-lights if already done)
     a = st.session_state.answers
     profile = {
         "Type": a.get("business_type", "—"),
@@ -638,16 +787,17 @@ elif step == 6:
 
     ds = st.session_state.get("domain_scores")
     assessment_overall = None
+    rights = wrongs = None
     if ds:
+        overall_val = int(sum(ds.values()) / max(1, len(ds)))
         assessment_overall = (
-            int(sum(ds.values()) / max(1, len(ds))),
-            "Strong" if int(sum(ds.values()) / max(1, len(ds))) >= 75
-            else "Moderate" if int(sum(ds.values()) / max(1, len(ds))) >= 50
-            else "Needs Attention"
+            overall_val,
+            "Strong" if overall_val >= 75 else "Moderate" if overall_val >= 50 else "Needs Attention"
         )
+        rights, wrongs = extract_right_wrong(a, st.session_state.get("assessment_answers", {}))
 
     st.subheader("Export")
-    pdf_bytes = generate_pdf(profile, intake_scores, intake_overall, ds, assessment_overall)
+    pdf_bytes = generate_pdf(profile, intake_scores, intake_overall, ds, assessment_overall, rights, wrongs)
     st.download_button(
         "Generate PDF Report",
         data=pdf_bytes,
