@@ -1,811 +1,300 @@
-# new_app.py
-# ------------------------------------------------------------
-# SME Cyber Self-Assessment – Pro
-# Conversational intake → Summary → Assessment → Results
-# Decision-grade results (traffic lights, birds-eye, right/wrong)
-# Clean PDF export (intake + assessment) — no external storage
-# Requires: streamlit==1.37+, fpdf==1.7.2
-# ------------------------------------------------------------
-
 import streamlit as st
-from datetime import datetime
 from fpdf import FPDF
+from datetime import datetime
 
-# =========================
-# Page setup
-# =========================
-st.set_page_config(
-    page_title="SME Cyber Self-Assessment – Pro",
-    page_icon="🛡️",
-    layout="wide"
-)
+# ---------- Page config ----------
+st.set_page_config(page_title="SME Cyber Risk Self-Assessment", page_icon="🛡️", layout="centered")
 
-APP_TITLE = "SME Cyber Self-Assessment – Pro"
-APP_SUBTITLE = (
-    "Before we talk about cybersecurity, let’s get to know your business a little better. "
-    "No tech jargon — just what really matters."
-)
+# ---------- Styles ----------
+CUSTOM_CSS = """
+<style>
+/* Base */
+html, body, [class^="css"]  { font-family: Inter, -apple-system, system-ui, Segoe UI, Roboto, Helvetica, Arial, sans-serif; }
+:root { --bg:#0a0a0a; --fg:#ffffff; --muted:#9AA0A6; --accent:#17C964; --accent2:#007AFF; --danger:#F31260; --warn:#FFB300; --amber:#FF7A00; }
 
-# =========================
-# Session state
-# =========================
-if "step" not in st.session_state:
-    st.session_state.step = 1            # 1..8 (5 intake sections, summary, assessment, results)
-if "answers" not in st.session_state:
-    st.session_state.answers = {}
-if "started_at" not in st.session_state:
-    st.session_state.started_at = datetime.utcnow().isoformat(timespec="seconds")
+.block-container { padding-top: 2rem !important; }
 
-def save(k, v):
-    st.session_state.answers[k] = v
+/* Landing */
+.hero { background: var(--bg); color: var(--fg); padding: 72px 36px; border-radius: 20px;
+        border: 1px solid #111; box-shadow: 0 10px 30px rgba(0,0,0,.35);}
+.hero h1 { font-size: 48px; line-height: 1.05; margin: 0 0 12px; letter-spacing: -0.02em; }
+.hero p { font-size: 18px; color: #c8c8c8; margin: 0 0 24px; }
 
-# =========================
-# Header & navigation
-# =========================
-def header():
-    st.title(APP_TITLE)
-    st.caption("A separate deployment from your core SME app")
-    st.markdown("### Getting to Know Your Business")
-    st.write(APP_SUBTITLE)
-    # Progress for the intake part only (steps 1..5)
-    prog = min(max(st.session_state.step - 1, 0), 5) / 5
-    st.progress(prog)
+/* Step header */
+.step { font-size: 14px; letter-spacing: .12em; color: var(--muted); text-transform: uppercase; margin: 8px 0 6px; }
 
-def nav(prev=True, nxt=True, validate_ok=True):
-    cols = st.columns([1, 1, 6])
-    with cols[0]:
-        if prev and st.button("← Back"):
-            st.session_state.step = max(1, st.session_state.step - 1)
-            st.rerun()
-    with cols[1]:
-        if nxt and st.button("Next →", type="primary", disabled=not validate_ok):
-            st.session_state.step = min(6, st.session_state.step + 1)
-            st.rerun()
+/* Cards grid */
+.card-grid { display: grid; grid-template-columns: repeat(2, minmax(200px, 1fr)); gap: 12px; margin: 12px 0 6px; }
+@media (min-width: 900px) { .card-grid { grid-template-columns: repeat(4, 1fr);} }
 
-# =========================
-# Intake Sections (conversation)
-# =========================
-def section_1():
-    st.markdown("#### Your Business at a Glance")
+.card {
+  background: #101214; color: #ECEDEE; border: 1px solid #17191c; border-radius: 16px; padding: 18px 16px;
+  min-height: 88px; display: flex; align-items: center; justify-content: center; text-align: center;
+  transition: .18s ease; cursor: pointer; user-select: none;
+}
+.card:hover { transform: translateY(-2px); border-color: #2a2f36; box-shadow: 0 8px 20px rgba(0,0,0,.35); }
+.card.selected { outline: 2px solid var(--accent2); box-shadow: 0 0 0 4px rgba(0,122,255,.12); }
 
-    save("business_type", st.text_input(
-        "What kind of business do you run?",
-        placeholder="e.g., local café, consulting firm, online shop, creative agency"
-    ))
+/* Next button (Framer-style) */
+.next-wrap { display:flex; align-items:center; justify-content:flex-end; margin-top: 10px; }
+.next {
+  background: var(--fg); color: #000; border: none; border-radius: 999px; padding: 12px 18px; font-weight: 600;
+  display:inline-flex; align-items:center; gap:10px; cursor:pointer; transition:.18s;
+}
+.next:hover { transform: translateX(2px); }
+.next .arrow { width: 22px; height:22px; border-radius:50%; background:#000; color:#fff; display:grid; place-items:center; }
 
-    save("years_in_business", st.radio(
-        "How long have you been in business?",
-        ["Less than a year", "1–3 years", "3–10 years", "Over 10 years"],
-        index=None
-    ))
+/* Result tiles */
+.tiles { display:grid; grid-template-columns: repeat(2, minmax(220px,1fr)); gap:12px; }
+@media (min-width: 900px) { .tiles { grid-template-columns: repeat(3, 1fr);} }
+.tile { border-radius:16px; padding:16px; color:#0a0a0a; background:#f5f5f5; border:1px solid #e6e6e6; }
+.badge { font-weight:700; padding:4px 10px; border-radius:999px; font-size:12px; display:inline-block; }
+.badge.red { background:#ffe6ea; color:#b00020; }
+.badge.orange { background:#fff0e0; color:#b24a00; }
+.badge.yellow { background:#fff9db; color:#8a6d00; }
+.badge.green { background:#e8f9ef; color:#0f7a3a; }
 
-    save("team_size", st.radio(
-        "Roughly how many people are involved in your business right now?",
-        ["Just me", "2–5", "6–20", "More than 20"],
-        index=None
-    ))
+/* Subtle divider */
+.hr { height:1px; background: linear-gradient(90deg, transparent, #1c1f24, transparent); margin: 18px 0; }
+</style>
+"""
+st.markdown(CUSTOM_CSS, unsafe_allow_html=True)
 
-    save("business_mode", st.radio(
-        "Would you describe your business as mostly...",
-        ["Local and in-person", "Online or remote", "A mix of both"],
-        index=None
-    ))
+# ---------- Session state ----------
+if "page" not in st.session_state: st.session_state.page = "landing"
+if "profile" not in st.session_state: st.session_state.profile = {}
+if "answers" not in st.session_state: st.session_state.answers = {}
+if "q_index" not in st.session_state: st.session_state.q_index = 0
 
-    save("turnover", st.radio(
-        "Which range fits your yearly turnover best?",
-        ["Under EUR 100k", "EUR 100k–500k", "EUR 500k–2M", "Over EUR 2M"],
-        index=None
-    ))
+# ---------- Questionnaire (one question per screen, 6 domains, 4 Qs each) ----------
+DOMAINS = [
+    ("Governance & Risk", "GOV"),
+    ("Identity & Access Management", "IAM"),
+    ("Data Protection & Privacy", "DPP"),
+    ("Network & Infrastructure", "NET"),
+    ("Incident Response & Recovery", "IR"),
+    ("Awareness & AI Risk", "AIA"),
+]
 
-    required = ["business_type", "years_in_business", "team_size", "business_mode", "turnover"]
-    ok = all(st.session_state.answers.get(k) not in [None, "", []] for k in required)
-    nav(prev=False, nxt=True, validate_ok=ok)
+QUESTIONS = [
+    # domain_code, question, [(label, score)]
+    ("GOV", "Do you have documented security responsibilities?", [("No / not sure",1),("Some notes exist",2),("Yes, basic doc",3),("Yes, reviewed annually",4)]),
+    ("GOV", "Do you assess risks at least annually?", [("Never",1),("Informal only",2),("Annual checklist",3),("Formal register+actions",4)]),
+    ("GOV", "Are suppliers (POS/loyalty/app) risk-checked?", [("No",1),("Basic check",2),("Contract clauses",3),("Checklist + review cycle",4)]),
+    ("GOV", "Joiner/leaver access managed?", [("Ad-hoc",2),("Basic",3),("Formal within 24h",4),("Automated",5)]),
 
-def section_2():
-    st.markdown("#### How You Use Technology")
+    ("IAM", "MFA enabled for email/admin tools?", [("No",1),("Some staff",3),("All accounts",4),("All + conditional access",5)]),
+    ("IAM", "Password manager in use?", [("No",1),("Optional",2),("Yes, adopted",4),("Yes + SSO",5)]),
+    ("IAM", "Unique accounts per staff/device?", [("Shared accounts",1),("Mixed",2),("Unique",3),("Unique + periodic review",4)]),
+    ("IAM", "Leaver access removed within 24h?", [("Days/weeks",1),("72h",2),("24–48h",3),("Same day",4)]),
 
-    save("online_sales", st.radio(
-        "Do you sell or deliver services online?",
-        ["Yes – own website", "Yes – via marketplaces", "No – mostly offline"],
-        index=None
-    ))
+    ("DPP", "Backups exist & tested?", [("None",1),("Ad-hoc",2),("Regular backups",3),("Tested restores",4)]),
+    ("DPP", "Minimal personal data collected?", [("Don’t know",1),("Some minimisation",2),("Yes, defined",3),("Yes + DPIA if needed",4)]),
+    ("DPP", "Cardholder data stored locally?", [("Yes",1),("Unsure",2),("No, processor only",4),("Tokenised controls",5)]),
+    ("DPP", "Privacy notice & consent on Wi-Fi/loyalty?", [("No",1),("Basic",2),("Yes",3),("Yes + reviewed",4)]),
 
-    save("stores_data", st.radio(
-        "Do you keep any customer or employee data (emails, invoices, payment info)?",
-        ["Yes", "No"],
-        index=None
-    ))
+    ("NET", "Router/POS firmware & patches?", [("Rarely",1),("Sometimes",2),("Monthly",3),("Automated/managed",4)]),
+    ("NET", "Guest Wi-Fi isolated from POS?", [("No",1),("Partially",2),("Yes (separate SSID/VLAN)",3),("Yes + ACLs",4)]),
+    ("NET", "Endpoint protection (AV/EDR) present?", [("No",1),("Basic AV",2),("AV + auto updates",3),("EDR + alerts",4)]),
+    ("NET", "Default creds removed everywhere?", [("Not sure",1),("Mostly",2),("Yes",3),("Yes + periodic audit",4)]),
 
-    save("daily_tools", st.multiselect(
-        "Which of these tools do you rely on daily?",
-        ["Email", "Accounting software", "CRM or client list",
-         "Cloud storage", "Online payment system", "Website or webshop"]
-    ))
+    ("IR", "Incident playbook exists?", [("No",1),("Draft",2),("Yes",3),("Yes + drills",4)]),
+    ("IR", "Contacts list (bank/IT/processor)?", [("No",1),("Partial",2),("Yes",3),("Yes + wallet card",4)]),
+    ("IR", "Restore test in last 6 months?", [("Never",1),("Over a year",2),("Yes",3),("Yes + recorded",4)]),
+    ("IR", "Phishing/reporting channel defined?", [("No",1),("Email to IT",2),("Button/alias",3),("Button + triage SOP",4)]),
 
-    save("website_manager", st.radio(
-        "Who looks after your website and online systems?",
-        ["I do", "Someone on my team", "External freelancer/company"],
-        index=None
-    ))
+    ("AIA", "Staff training (incl. AI-aware) frequency?", [("Never",1),("Annual",2),("Quarterly micro",3),("Quarterly + role-based",4)]),
+    ("AIA", "Phishing simulations in last 12m?", [("No",1),("Once",2),("Quarterly",3),("Quarterly + targeted",4)]),
+    ("AIA", "Guidance on deepfakes/voice scams?", [("No",1),("Basic tips",2),("Playbook",3),("Playbook + drills",4)]),
+    ("AIA", "Cashier/shift fraud checks (refunds/cards)?", [("No",1),("Some checks",2),("Checklist",3),("Checklist + approvals",4)]),
+]
 
-    ok = all(st.session_state.answers.get(k) not in [None, ""] for k in ["online_sales", "stores_data", "website_manager"])
-    nav(prev=True, nxt=True, validate_ok=ok)
-
-def section_3():
-    st.markdown("#### Who Manages Your IT and Accounts")
-
-    save("it_support", st.radio(
-        "Who handles computers, email, and systems when something breaks?",
-        ["I do", "Freelancer", "IT company", "In-house IT team"],
-        index=None
-    ))
-
-    save("system_setup", st.radio(
-        "Did you personally set up your main systems and accounts?",
-        ["Yes, mostly me", "Shared effort", "Someone else handled it"],
-        index=None
-    ))
-
-    save("asset_list", st.radio(
-        "Do you have a clear list of systems, accounts, and devices you use?",
-        ["Yes, documented", "Rough idea", "Not really"],
-        index=None
-    ))
-
-    ok = all(st.session_state.answers.get(k) not in [None, ""] for k in ["it_support", "system_setup", "asset_list"])
-    nav(prev=True, nxt=True, validate_ok=ok)
-
-def section_4():
-    st.markdown("#### Partners and Ecosystem")
-
-    save("partners", st.radio(
-        "Do you work with external partners who handle your data or systems?",
-        ["Yes", "No"],
-        index=None
-    ))
-
-    save("num_partners", st.radio(
-        "Roughly how many key partners do you rely on?",
-        ["0–2", "3–5", "6+"],
-        index=None
-    ))
-
-    save("breach_response", st.radio(
-        "If one had a data breach, would you know what to do?",
-        ["Yes, I know who to contact", "Not really sure"],
-        index=None
-    ))
-
-    ok = all(st.session_state.answers.get(k) not in [None, ""] for k in ["partners", "num_partners", "breach_response"])
-    nav(prev=True, nxt=True, validate_ok=ok)
-
-def section_5():
-    st.markdown("#### Confidence & Experience")
-
-    save("preparedness", st.radio(
-        "If hit by a cyberattack tomorrow, how prepared would you feel?",
-        ["Not at all", "Somewhat", "Fairly confident", "Very confident"],
-        index=None
-    ))
-
-    save("past_incident", st.radio(
-        "Have you experienced a cybersecurity issue before?",
-        ["Yes", "No", "Not sure"],
-        index=None
-    ))
-
-    save("knows_help", st.radio(
-        "Do you know who to call if that happened?",
-        ["Yes", "No"],
-        index=None
-    ))
-
-    ok = all(st.session_state.answers.get(k) not in [None, ""] for k in ["preparedness", "past_incident", "knows_help"])
-    nav(prev=True, nxt=True, validate_ok=ok)
-
-# =========================
-# Summary helpers & scoring (intake summary view)
-# =========================
-def compute_scores_from_intake(a: dict) -> dict:
-    scores = {}
-
-    # Governance & Visibility
-    scores["Governance & Visibility"] = (
-        85 if a.get("asset_list") == "Yes, documented"
-        else 60 if a.get("asset_list") == "Rough idea"
-        else 35
-    )
-
-    # Data Protection
-    holds_data = a.get("stores_data") == "Yes"
-    uses_cloud = "Cloud storage" in (a.get("daily_tools") or [])
-    scores["Data Protection"] = 80 if holds_data and uses_cloud else 55 if holds_data else 45
-
-    # Access Control
-    pro_it = a.get("it_support") in ["IT company", "In-house IT team"]
-    scores["Access Control"] = 75 if pro_it else 55
-
-    # Vendor Risk
-    has_partners = a.get("partners") == "Yes"
-    scores["Vendor Risk"] = 70 if has_partners else 50
-
-    # Incident Readiness
-    knows_help = a.get("knows_help") == "Yes"
-    confident = a.get("preparedness") in ["Fairly confident", "Very confident"]
-    scores["Incident Readiness"] = 80 if knows_help and confident else 60 if knows_help else 40
-
-    return scores
-
-def overall_readiness(scores: dict) -> tuple[int, str]:
-    avg = int(sum(scores.values()) / max(1, len(scores)))
-    label = "Strong" if avg >= 75 else "Moderate" if avg >= 50 else "Needs Attention"
-    return avg, label
-
-# =========================
-# Intake Summary View (Step 6)
-# =========================
-def section_summary():
-    a = st.session_state.answers
-    st.success("Conversation saved. Here’s your Business Context.")
-
-    profile = {
-        "Type": a.get("business_type", "—"),
-        "Size": a.get("team_size", "—"),
-        "Mode": a.get("business_mode", "—"),
-        "Years": a.get("years_in_business", "—"),
-        "Turnover": a.get("turnover", "—"),
-        "Online sales": a.get("online_sales", "—"),
-        "Data handled": a.get("stores_data", "—"),
-        "Digital tools": ", ".join(a.get("daily_tools", [])) or "—",
-        "Website ownership": a.get("website_manager", "—"),
-        "IT support": a.get("it_support", "—"),
-        "System setup": a.get("system_setup", "—"),
-        "Asset inventory": a.get("asset_list", "—"),
-        "Partners": a.get("partners", "—"),
-        "Partner count": a.get("num_partners", "—"),
-        "Third-party breach plan": a.get("breach_response", "—"),
-        "Confidence": a.get("preparedness", "—"),
-        "Past incident": a.get("past_incident", "—"),
-        "Knows who to call": a.get("knows_help", "—"),
+FEEDBACK = {
+    "GOV": {
+        "good": "Governance foundations visible. Keep documenting responsibilities and supplier checks.",
+        "improve": "Introduce a simple risk register and quarterly access reviews."
+    },
+    "IAM": {
+        "good": "MFA and password manager adoption is a strong base.",
+        "improve": "Tighten leaver process to same-day removals; extend MFA to all admin apps."
+    },
+    "DPP": {
+        "good": "Backups and minimal data collection are in place.",
+        "improve": "Test restores twice a year and review Wi-Fi/loyalty privacy notices."
+    },
+    "NET": {
+        "good": "Basic segmentation and endpoint controls exist.",
+        "improve": "Ensure guest Wi-Fi isolation and monthly patching for router/POS/OS."
+    },
+    "IR": {
+        "good": "Contacts and reporting route are mostly defined.",
+        "improve": "Create a 1-page incident card and run a 15-minute tabletop drill."
+    },
+    "AIA": {
+        "good": "Some awareness exists across staff.",
+        "improve": "Add quarterly AI-aware micro-training and one phishing simulation."
     }
-
-    scores = compute_scores_from_intake(a)
-    avg, label = overall_readiness(scores)
-
-    # Snapshot (left) + KPIs (right)
-    st.subheader("Business Snapshot")
-    c1, c2 = st.columns([1.3, 1])
-    with c1:
-        for k, v in profile.items():
-            st.markdown(f"**{k}:** {v}")
-    with c2:
-        st.subheader("Key KPIs")
-        st.markdown(f"**Overall readiness (intake):** {avg}/100 ({label})")
-        st.markdown(f"**Third-party exposure:** {'Yes' if a.get('partners')=='Yes' else 'No'}")
-        st.markdown(f"**Knows who to call:** {profile['Knows who to call']}")
-
-    st.divider()
-
-    st.subheader("Control Health (from intake)")
-    for dom, sc in scores.items():
-        st.markdown(f"**{dom}:** {sc}/100")
-        st.progress(sc/100)
-
-    st.divider()
-    st.subheader("Next")
-    cols = st.columns([1,1,6])
-    with cols[0]:
-        if st.button("← Back"):
-            st.session_state.step = 5
-            st.rerun()
-    with cols[1]:
-        if st.button("Proceed to Cyber Assessment →", type="primary"):
-            st.session_state.step = 7
-            st.rerun()
-
-# =========================
-# Assessment Question Bank (domain → list of Qs)
-# =========================
-QUESTION_BANK = {
-    # 1) Governance & Asset Visibility
-    "Governance & Asset Visibility": [
-        {"id":"GV01","q":"Do you maintain a written inventory of key systems, devices and SaaS apps?","opts":["Yes","No"]},
-        {"id":"GV02","q":"Is there a list of admin/owner accounts for each system?","opts":["Yes","No"]},
-        {"id":"GV03","q":"Do you review who has access at least quarterly?","opts":["Yes","No"]},
-        {"id":"GV04","q":"Is there a named person responsible for IT/security decisions?","opts":["Me","Named staff","External MSP","No owner"]},
-        {"id":"GV05","q":"Do you have basic IT rules/policies (passwords, device use, data handling)?","opts":["Yes","No","In draft"]},
-        {"id":"GV06","q":"Do you use a joiner/mover/leaver checklist for accounts?","opts":["Yes","No"]},
-    ],
-
-    # 2) Access & Identity
-    "Access & Identity": [
-        {"id":"AI01","q":"Is MFA enforced for company email accounts?","opts":["Yes","No","Partially"]},
-        {"id":"AI02","q":"Is MFA enforced for admin/owner accounts on critical systems?","opts":["Yes","No","Partially"]},
-        {"id":"AI03","q":"Do staff use a business-issued password manager?","opts":["Yes","No","Personal","Not sure"]},
-        {"id":"AI04","q":"Are shared accounts avoided or tightly controlled and documented?","opts":["Yes","No","N/A"]},
-        {"id":"AI05","q":"Do you require unique accounts per person for all systems?","opts":["Yes","No","Partially"]},
-        {"id":"AI06","q":"Are default/admin passwords changed on all devices/services?","opts":["Yes","No","N/A"]},
-    ],
-
-    # 3) Data Protection & Backup
-    "Data Protection & Backup": [
-        {"id":"DP01","q":"Do you store customer/employee data (names, emails, invoices, payment refs)?","opts":["Yes","No"]},
-        {"id":"DP02","q":"Where are files stored?","opts":["Managed cloud (Google/OneDrive)","Own server","Local only"]},
-        {"id":"DP03","q":"Are automated backups enabled at least daily?","opts":["Yes","No","Not needed"]},
-        {"id":"DP04","q":"Do you test a restore at least monthly?","opts":["Yes","No"]},
-        {"id":"DP05","q":"Are backups versioned / immutable / offsite?","opts":["Yes","No","Not sure"]},
-        {"id":"DP06","q":"Do you have a simple data retention approach (keep/delete)?","opts":["Yes","No","In draft"]},
-    ],
-
-    # 4) Device Security
-    "Device Security": [
-        {"id":"DV01","q":"Is full-disk encryption enabled on laptops?","opts":["Yes","No","Some"]},
-        {"id":"DV02","q":"Do all devices auto-lock (≤10 min) and require PIN/password/biometric?","opts":["Yes","No","Some"]},
-        {"id":"DV03","q":"Are automatic OS and browser updates enabled?","opts":["Yes","No","Some"]},
-        {"id":"DV04","q":"Is built-in anti-malware/AV active (e.g., Defender) or EDR deployed?","opts":["Yes","No","Some devices"]},
-        {"id":"DV05","q":"Can you wipe a lost/stolen device (MDM/Find My/Intune)?","opts":["Yes","No","Not sure"]},
-    ],
-
-    # 5) Email & Collaboration
-    "Email & Collaboration": [
-        {"id":"EM01","q":"Is a spam/phishing filter active on your email platform?","opts":["Yes","No","Not sure"]},
-        {"id":"EM02","q":"Do staff know how to report phishing (button or address)?","opts":["Yes","No","Some"]},
-        {"id":"EM03","q":"Is external mail forwarding restricted/monitored?","opts":["Yes","No","Not sure"]},
-        {"id":"EM04","q":"Are risky file types warned/blocked (e.g., .exe, macros)?","opts":["Yes","No","Not sure"]},
-    ],
-
-    # 6) Network & Remote Access
-    "Network & Remote Access": [
-        {"id":"NW01","q":"Do staff connect remotely using secured methods (VPN/zero trust)?","opts":["Yes","No","N/A"]},
-        {"id":"NW02","q":"Is your router/firewall set to auto-update firmware?","opts":["Yes","No","Not sure","N/A"]},
-        {"id":"NW03","q":"Is remote admin (RDP/SSH/panels) closed to the internet or gated by MFA/VPN?","opts":["Yes","No","Not sure"]},
-        {"id":"NW04","q":"Is guest Wi-Fi segmented from business devices?","opts":["Yes","No","N/A"]},
-    ],
-
-    # 7) Incident Readiness & Logging
-    "Incident Readiness & Logging": [
-        {"id":"IR01","q":"Do you have a 1-page incident plan (who to call, first steps, backups)?","opts":["Yes","No","In draft"]},
-        {"id":"IR02","q":"Are key contacts (IT/MSP/bank/legal) written and accessible offline?","opts":["Yes","No","Partial"]},
-        {"id":"IR03","q":"Do you know how to isolate a device during an incident?","opts":["Yes","No","Not sure"]},
-        {"id":"IR04","q":"Can you reset all user passwords quickly if needed?","opts":["Yes","No","Not sure"]},
-        {"id":"IR05","q":"Do you keep basic logs (sign-ins/admin changes/website errors) ≥30 days?","opts":["Yes","No","Not sure"]},
-        {"id":"IR06","q":"Have you done a table-top exercise (talk-through of a fake incident)?","opts":["Yes","No","Planned"]},
-    ],
-
-    # 8) People & Training
-    "People & Training": [
-        {"id":"PT01","q":"Have staff had security awareness in the last 12 months?","opts":["Yes","No","Only onboarding"]},
-        {"id":"PT02","q":"Do contractors/temps get the same security guidance?","opts":["Yes","No","N/A"]},
-        {"id":"PT03","q":"Do you have a short Acceptable Use / IT rules document?","opts":["Yes","No","In draft"]},
-        {"id":"PT04","q":"Are admin/staff roles clear (who can change settings / approve access)?","opts":["Yes","No","Partial"]},
-    ],
-
-    # Conditional: Website / Online
-    "Website / Online": [
-        {"id":"WB01","q":"Is the site/shop always served over HTTPS?","opts":["Yes","No","Not sure"]},
-        {"id":"WB02","q":"Are security/plugin updates applied automatically or on a schedule?","opts":["Auto","Scheduled","Manual","Not sure"]},
-        {"id":"WB03","q":"Do you have uptime/security alerts configured?","opts":["Yes","No","Not sure"]},
-        {"id":"WB04","q":"Are admin logins protected with MFA (CMS/payment gateway)?","opts":["Yes","No","N/A"]},
-        {"id":"WB05","q":"You never store card data yourself (use PSPs like Stripe/PayPal only).","opts":["Yes","No","N/A"]},
-    ],
-
-    # Conditional: Vendor / Third-Party
-    "Vendor / Third-Party": [
-        {"id":"VR01","q":"Do you keep a list of key vendors with what data they handle?","opts":["Yes","No","Partial"]},
-        {"id":"VR02","q":"Do vendors with access to your data use MFA on their side?","opts":["Yes","No","Unknown"]},
-        {"id":"VR03","q":"Do you know the breach/security contact for each key vendor?","opts":["Yes","No","Some"]},
-        {"id":"VR04","q":"Do you off-board vendors (remove access, revoke tokens/keys)?","opts":["Yes","No","Not sure"]},
-        {"id":"VR05","q":"Are transfers to/from vendors encrypted (SFTP/HTTPS/TLS email)?","opts":["Yes","No","Unknown"]},
-    ],
 }
 
-def build_assessment_plan(context: dict) -> list[tuple[str, list[dict]]]:
-    """Pick relevant domains based on intake answers."""
-    plan = [
-        ("Governance & Asset Visibility", QUESTION_BANK["Governance & Asset Visibility"]),
-        ("Access & Identity", QUESTION_BANK["Access & Identity"]),
-        ("Data Protection & Backup", QUESTION_BANK["Data Protection & Backup"]),
-        ("Device Security", QUESTION_BANK["Device Security"]),
-        ("Email & Collaboration", QUESTION_BANK["Email & Collaboration"]),
-        ("Network & Remote Access", QUESTION_BANK["Network & Remote Access"]),
-        ("Incident Readiness & Logging", QUESTION_BANK["Incident Readiness & Logging"]),
-        ("People & Training", QUESTION_BANK["People & Training"]),
-    ]
-    if context.get("online_sales","").startswith("Yes") or "Website or webshop" in (context.get("daily_tools") or []):
-        plan.append(("Website / Online", QUESTION_BANK["Website / Online"]))
-    if context.get("partners") == "Yes":
-        plan.append(("Vendor / Third-Party", QUESTION_BANK["Vendor / Third-Party"]))
-    return plan
+# ---------- Helpers ----------
+def domain_scores(answers):
+    scores = {code: [] for _, code in DOMAINS}
+    for i, q in enumerate(QUESTIONS):
+        code, _, options = q
+        if i in answers:
+            scores[code].append(answers[i])
+    return {d: (sum(vals)/len(vals) if vals else 0) for d, vals in scores.items()}
 
-# =========================
-# Assessment Scoring
-# =========================
-YES_VALUES = {"Yes","Me","Named staff","External MSP","Managed cloud (Google/OneDrive)","Own server","Auto","Scheduled"}
-IGNORE_VALUES = {"N/A","Not sure","Unknown","Some","Partial","In draft","Planned","Only onboarding"}
+def label_for(score):
+    if score < 2: return "red", "🔴 Initial"
+    if score < 3: return "orange", "🟠 Developing"
+    if score < 4: return "yellow", "🟡 Defined"
+    return "green", "🟢 Managed/Optimised"
 
-def normalize_to_bool(val: str) -> int | None:
-    """
-    Map option -> 1 (yes), 0 (no), None (ignore).
-    Neutral responses don't penalize.
-    """
-    if val in YES_VALUES:
-        return 1
-    if val in IGNORE_VALUES:
-        return None
-    if val in {"Manual", "Local only", "No", "Personal"}:
-        return 0
-    return None
+def next_question_index(idx):
+    return min(idx + 1, len(QUESTIONS))
 
-def domain_score(answers: dict, controls: list[dict]) -> int:
-    yes = 0; total = 0
-    for c in controls:
-        v = answers.get(c["id"])
-        b = normalize_to_bool(v) if v is not None else None
-        if b is None:
-            continue
-        total += 1
-        if b == 1:
-            yes += 1
-    return int(100 * yes / total) if total else 0
+def prev_question_index(idx):
+    return max(idx - 1, 0)
 
-# ===== Traffic-light + summarizers =====
-def status_from_score(x: int) -> tuple[str, str]:
-    """Return (label, tone) where tone ∈ {'good','warn','bad'}."""
-    if x >= 75:
-        return "Good", "good"
-    if x >= 50:
-        return "Mixed", "warn"
-    return "Needs work", "bad"
+def export_pdf(profile, scores, overall):
+    pdf = FPDF()
+    pdf.add_page()
+    pdf.set_font("Arial", "B", 16)
+    pdf.cell(0, 10, "Cyber Risk Self-Assessment Report", ln=1)
+    pdf.set_font("Arial", "", 12)
+    pdf.cell(0, 8, f"Organisation: {profile.get('name','')}", ln=1)
+    pdf.cell(0, 8, f"Date: {datetime.now().strftime('%Y-%m-%d %H:%M')}", ln=1)
+    pdf.ln(4)
+    pdf.set_font("Arial", "B", 12)
+    pdf.cell(0, 8, f"Overall Maturity: {overall:.2f}/5", ln=1)
+    pdf.ln(2)
+    pdf.set_font("Arial", "", 12)
+    for title, code in DOMAINS:
+        s = scores[code]
+        _, tag = label_for(s)
+        pdf.cell(0, 7, f"- {title}: {s:.2f}  ({tag})", ln=1)
+    pdf.ln(3)
+    pdf.set_font("Arial", "B", 12); pdf.cell(0,8,"Quick Recommendations", ln=1)
+    pdf.set_font("Arial","",12)
+    for title, code in DOMAINS:
+        pdf.multi_cell(0,6, f"{title} – {FEEDBACK[code]['improve']}")
+    filename = f"assessment_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pdf"
+    pdf.output(filename)
+    return filename
 
-def badge(text: str, tone: str = "neutral") -> str:
-    colors = {
-        "good": "#16a34a",   # green-600
-        "warn": "#d97706",   # amber-600
-        "bad":  "#dc2626",   # red-600
-        "neutral": "#334155" # slate-700
-    }
-    return (
-        f"<span style='display:inline-block;padding:2px 10px;border-radius:999px;"
-        f"font-size:12px;font-weight:700;color:white;background:{colors.get(tone, '#334155')};'>"
-        f"{text}</span>"
+# ---------- UI Components ----------
+def hero():
+    st.markdown(
+        f"""
+        <div class="hero">
+          <div class="step">SME Cybersecurity</div>
+          <h1>Social-engineering risk self-assessment</h1>
+          <p>Clean, fast, and human-centred. One question at a time — no clutter, no charts.</p>
+        </div>
+        """, unsafe_allow_html=True
     )
+    with st.form("profile"):
+        st.write("")
+        name = st.text_input("Business name", placeholder="e.g., Café Aurora")
+        sector = st.selectbox("Sector", ["Hospitality", "Retail", "Consulting", "Healthcare", "Other"])
+        staff = st.number_input("Employees", 1, 500, 12)
+        colA, colB = st.columns(2)
+        it_provider = colA.selectbox("External IT provider", ["No", "Yes, ad-hoc", "Yes, managed"])
+        prior_incident = colB.selectbox("Any suspicious incidents in the last 12m?", ["No", "Yes (unsure impact)", "Yes (reported)"])
+        submitted = st.form_submit_button("Start Assessment")
+    if submitted:
+        st.session_state.profile = {
+            "name": name, "sector": sector, "staff": staff,
+            "it": it_provider, "incident": prior_incident
+        }
+        st.session_state.page = "assessment"
 
-def domain_takeaway(domain: str, score: int) -> str:
-    if score >= 75:
-        return "Solid foundations in place — keep reviewing quarterly."
-    if score >= 50:
-        return "Some practices exist — standardize and close the obvious gaps."
-    return "High exposure — establish minimum controls for this area first."
-
-def extract_right_wrong(context: dict, answers: dict) -> tuple[list[dict], list[dict]]:
-    """
-    Build lists of controls answered Yes (right) and No (wrong) using the current plan.
-    N/A / Not sure etc. are ignored in both lists.
-    """
-    plan = build_assessment_plan(context)
-    rights, wrongs = [], []
-    for domain, controls in plan:
-        for c in controls:
-            v = answers.get(c["id"])
-            if v is None:
-                continue
-            b = normalize_to_bool(v)
-            if b is None:
-                continue
-            if b == 1:
-                rights.append({"area": domain, "control": c["q"]})
-            elif b == 0:
-                wrongs.append({"area": domain, "control": c["q"]})
-    return rights, wrongs
-
-# =========================
-# Assessment UI (Step 7) & Results (Step 8)
-# =========================
-def section_assessment():
-    st.subheader("Cyber Posture Assessment")
-    st.caption("Answer the checklist below. N/A and Not sure are ignored for fair scoring.")
-
-    context = st.session_state.answers
-    plan = build_assessment_plan(context)
-
-    ac = st.session_state.get("assessment_answers", {})
-
-    for domain, controls in plan:
-        with st.expander(domain, expanded=True):
-            for c in controls:
-                key = c["id"]
-                default = ac.get(key)
-                ac[key] = st.radio(
-                    c["q"],
-                    c["opts"],
-                    index=(c["opts"].index(default) if default in c["opts"] else (c["opts"].index("No") if "No" in c["opts"] else 0)),
-                    key=key
-                )
-
-    st.session_state.assessment_answers = ac
-
-    st.divider()
-    cols = st.columns([1,1,6])
-    with cols[0]:
-        if st.button("← Back"):
-            st.session_state.step = 6
-            st.rerun()
-    with cols[1]:
-        if st.button("Calculate results", type="primary"):
-            ds = {dom: domain_score(ac, ctrls) for dom, ctrls in plan}
-            st.session_state.domain_scores = ds
-            st.session_state.step = 8
-            st.rerun()
-
-def section_assessment_results():
-    st.subheader("Assessment Results")
-
-    ds = st.session_state.get("domain_scores", {})
-    ac = st.session_state.get("assessment_answers", {})
-    context = st.session_state.answers
-
-    if not ds:
-        st.info("No results yet. Please complete the checklist.")
-        if st.button("← Back to checklist"):
-            st.session_state.step = 7
-            st.rerun()
+def question_screen():
+    idx = st.session_state.q_index
+    if idx >= len(QUESTIONS):
+        st.session_state.page = "results"
         return
 
-    # ===== Bird’s-eye view (traffic lights)
-    overall = int(sum(ds.values()) / max(1, len(ds)))
-    overall_label, overall_tone = status_from_score(overall)
+    code, qtext, options = QUESTIONS[idx]
+    domain_name = [d for d in DOMAINS if d[1] == code][0][0]
 
-    st.markdown(
-        f"**Overall coverage:** {overall}/100 &nbsp; {badge(overall_label, overall_tone)}",
-        unsafe_allow_html=True
-    )
+    st.markdown(f"<div class='step'>{domain_name}</div>", unsafe_allow_html=True)
+    st.markdown(f"### {qtext}")
 
-    st.markdown("##### Bird’s-eye view by domain")
-    rows_html = ["<table style='width:100%;border-collapse:collapse'>",
-                 "<thead><tr style='text-align:left'>"
-                 "<th style='padding:8px;border-bottom:1px solid #e5e7eb'>Domain</th>"
-                 "<th style='padding:8px;border-bottom:1px solid #e5e7eb'>Coverage</th>"
-                 "<th style='padding:8px;border-bottom:1px solid #e5e7eb'>Status</th>"
-                 "<th style='padding:8px;border-bottom:1px solid #e5e7eb'>Takeaway</th>"
-                 "</tr></thead><tbody>"]
-    for domain, score in ds.items():
-        label, tone = status_from_score(score)
-        takeaway = domain_takeaway(domain, score)
-        rows_html.append(
-            "<tr>"
-            f"<td style='padding:8px;border-bottom:1px solid #f1f5f9'>{domain}</td>"
-            f"<td style='padding:8px;border-bottom:1px solid #f1f5f9'><b>{score}</b>/100</td>"
-            f"<td style='padding:8px;border-bottom:1px solid #f1f5f9'>{badge(label, tone)}</td>"
-            f"<td style='padding:8px;border-bottom:1px solid #f1f5f9'>{takeaway}</td>"
-            "</tr>"
+    # Render options as cards
+    cols = st.container()
+    cols.markdown("<div class='card-grid'>", unsafe_allow_html=True)
+    selected_idx = None
+    for opt_i, (label, score) in enumerate(options):
+        is_selected = (st.session_state.answers.get(idx, None) == score)
+        selected_class = " selected" if is_selected else ""
+        if st.button(label, key=f"q{idx}_opt{opt_i}", help=str(score)):
+            st.session_state.answers[idx] = score
+            selected_idx = opt_i
+        # Mark selection visually by re-rendering HTML
+        cols.markdown(f"<div class='card{selected_class}'>{label}</div>", unsafe_allow_html=True)
+    cols.markdown("</div>", unsafe_allow_html=True)
+
+    # Nav
+    left, right = st.columns([1,1])
+    if left.button("← Back", disabled=(idx==0)):
+        st.session_state.q_index = prev_question_index(idx)
+        st.experimental_rerun()
+
+    st.markdown("<div class='next-wrap'>", unsafe_allow_html=True)
+    if st.button("Next  ", key=f"next_{idx}", help="Go to next question"):
+        st.session_state.q_index = next_question_index(idx)
+        st.experimental_rerun()
+    st.markdown("</div>", unsafe_allow_html=True)
+
+def results_screen():
+    scores = domain_scores(st.session_state.answers)
+    overall = sum(scores.values()) / len(DOMAINS)
+
+    st.markdown("## Results")
+    st.caption("Traffic-light tiles — no charts.")
+    st.markdown("<div class='tiles'>", unsafe_allow_html=True)
+    for title, code in DOMAINS:
+        s = scores[code]
+        color, tag = label_for(s)
+        st.markdown(
+            f"<div class='tile'><div class='badge {color}'>{tag}</div><div style='height:8px'></div>"
+            f"<div style='font-weight:700; font-size:18px'>{title}</div>"
+            f"<div style='color:#4a4f55; margin-top:6px'>Score: {s:.2f} / 5</div>"
+            f"</div>", unsafe_allow_html=True
         )
-    rows_html.append("</tbody></table>")
-    st.markdown("".join(rows_html), unsafe_allow_html=True)
+    st.markdown("</div>", unsafe_allow_html=True)
 
-    st.divider()
+    st.markdown("<div class='hr'></div>", unsafe_allow_html=True)
+    st.subheader(f"Overall maturity: {overall:.2f} / 5")
 
-    # ===== Right vs Wrong lists
-    rights, wrongs = extract_right_wrong(context, ac)
+    # Feedback
+    st.markdown("### What you're doing well")
+    for title, code in DOMAINS:
+        st.write(f"- **{title}:** {FEEDBACK[code]['good']}")
 
-    col_ok, col_fix = st.columns(2)
-    with col_ok:
-        st.markdown("#### ✅ What you’re doing right")
-        if rights:
-            count = 0
-            for item in rights:
-                st.markdown(f"- **{item['area']}** — {item['control']}")
-                count += 1
-                if count >= 10:
-                    break
-            if len(rights) > 10:
-                st.caption(f"...and {len(rights) - 10} more ✓")
-        else:
-            st.caption("We didn’t detect specific confirmed controls yet.")
+    st.markdown("### What to improve next")
+    for title, code in DOMAINS:
+        st.write(f"- **{title}:** {FEEDBACK[code]['improve']}")
 
-    with col_fix:
-        st.markdown("#### ⚠️ What needs work")
-        if wrongs:
-            # Order by weakest domain first
-            domain_order = sorted(ds.items(), key=lambda kv: kv[1])
-            order_map = {d: i for i, (d, _) in enumerate(domain_order)}
-            wrongs_sorted = sorted(wrongs, key=lambda x: order_map.get(x["area"], 999))
-            for i, item in enumerate(wrongs_sorted[:10], 1):
-                st.markdown(f"- **{item['area']}** — {item['control']}")
-            if len(wrongs_sorted) > 10:
-                st.caption(f"...and {len(wrongs_sorted) - 10} more to address")
-        else:
-            st.caption("No immediate gaps flagged — nice job.")
+    # Export
+    st.markdown("<div class='hr'></div>", unsafe_allow_html=True)
+    if st.button("📄 Export PDF report"):
+        filename = export_pdf(st.session_state.profile, scores, overall)
+        with open(filename, "rb") as f:
+            st.download_button("Download report", f, file_name=filename, mime="application/pdf")
 
-    st.divider()
+    if st.button("↺ Restart"):
+        st.session_state.page = "landing"
+        st.session_state.q_index = 0
+        st.session_state.answers = {}
+        st.experimental_rerun()
 
-    # ===== Optional domain bars for detail
-    st.markdown("#### Domain coverage details")
-    for k, v in ds.items():
-        label, tone = status_from_score(v)
-        st.markdown(f"**{k}:** {v}/100 &nbsp; {badge(label, tone)}", unsafe_allow_html=True)
-        st.progress(v/100)
-
-    # ===== Nav
-    cols = st.columns([1,1,6])
-    with cols[0]:
-        if st.button("← Back"):
-            st.session_state.step = 7
-            st.rerun()
-    with cols[1]:
-        if st.button("Finish"):
-            st.session_state.step = 6  # back to intake summary
-            st.rerun()
-
-# =========================
-# PDF utilities (Unicode-safe for FPDF 1.x)
-# =========================
-def clean_text(x) -> str:
-    """Sanitize to latin-1 for FPDF 1.x."""
-    if x is None:
-        return ""
-    s = str(x)
-    repl = {
-        "’": "'", "‘": "'", "“": '"', "”": '"',
-        "–": "-", "—": "-",
-        "•": "*", "→": "->",
-        "€": "EUR", "…": "...",
-        "✅": "", "⚠️": "", "🛡️": "", "📄": "", "🧾": ""
-    }
-    for k, v in repl.items():
-        s = s.replace(k, v)
-    return s.encode("latin-1", "ignore").decode("latin-1")
-
-class ReportPDF(FPDF):
-    def header(self):
-        self.set_font("Helvetica", "B", 14)
-        self.cell(0, 8, clean_text("SME Cybersecurity Self-Assessment Report"), ln=True, align="C")
-        self.ln(4)
-
-    def footer(self):
-        self.set_y(-15)
-        self.set_font("Helvetica", "I", 8)
-        self.cell(0, 10, f"Page {self.page_no()}", 0, 0, "C")
-
-def pdf_status_label(score: int) -> str:
-    # ASCII-friendly traffic light labels
-    if score >= 75:
-        return "GOOD"
-    if score >= 50:
-        return "MIXED"
-    return "NEEDS WORK"
-
-def generate_pdf(profile: dict,
-                 intake_scores: dict, intake_overall: tuple[int,str],
-                 ds: dict | None = None,
-                 assessment_overall: tuple[int,str] | None = None,
-                 rights: list[dict] | None = None,
-                 wrongs: list[dict] | None = None) -> bytes:
-    """
-    Create a concise, text-first PDF including traffic-light style summaries.
-    """
-    pdf = ReportPDF()
-    pdf.add_page()
-    pdf.set_auto_page_break(auto=True, margin=15)
-
-    # --- Business Context
-    pdf.set_font("Helvetica", "B", 12)
-    pdf.cell(0, 10, clean_text("Business Context Summary"), ln=True)
-    pdf.set_font("Helvetica", "", 11)
-    pdf.cell(0, 8, clean_text(f"Generated: {datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC')}"), ln=True)
-    pdf.ln(2)
-    for k, v in profile.items():
-        pdf.multi_cell(0, 6, clean_text(f"{k}: {v}"))
-    pdf.ln(4)
-
-    # --- Intake readiness
-    avg_i, label_i = intake_overall
-    pdf.set_font("Helvetica", "B", 12)
-    pdf.cell(0, 8, clean_text("Readiness Overview (from intake)"), ln=True)
-    pdf.set_font("Helvetica", "", 11)
-    pdf.multi_cell(0, 6, clean_text(f"Overall (intake): {avg_i}/100 ({label_i})"))
-    for k, v in intake_scores.items():
-        pdf.multi_cell(0, 6, clean_text(f"- {k}: {v}/100 ({pdf_status_label(v)})"))
-    pdf.ln(4)
-
-    # --- Assessment bird’s-eye
-    if ds is not None and assessment_overall is not None:
-        avg_a, label_a = assessment_overall
-        pdf.set_font("Helvetica", "B", 12)
-        pdf.cell(0, 8, clean_text("Assessment Results (bird’s-eye)"), ln=True)
-        pdf.set_font("Helvetica", "", 11)
-        pdf.multi_cell(0, 6, clean_text(f"Overall (assessment): {avg_a}/100 ({label_a})"))
-        for k, v in ds.items():
-            pdf.multi_cell(0, 6, clean_text(f"- {k}: {v}/100 ({pdf_status_label(v)})"))
-        pdf.ln(2)
-
-        # Right vs Wrong
-        if rights is not None or wrongs is not None:
-            pdf.set_font("Helvetica", "B", 12)
-            pdf.cell(0, 8, clean_text("What you’re doing right"), ln=True)
-            pdf.set_font("Helvetica", "", 11)
-            if rights:
-                for item in rights[:12]:
-                    pdf.multi_cell(0, 6, clean_text(f"- {item['area']} — {item['control']}"))
-            else:
-                pdf.multi_cell(0, 6, clean_text("No confirmed controls selected as Yes."))
-            pdf.ln(2)
-
-            pdf.set_font("Helvetica", "B", 12)
-            pdf.cell(0, 8, clean_text("What needs work"), ln=True)
-            pdf.set_font("Helvetica", "", 11)
-            if wrongs:
-                for item in wrongs[:12]:
-                    pdf.multi_cell(0, 6, clean_text(f"- {item['area']} — {item['control']}"))
-            else:
-                pdf.multi_cell(0, 6, clean_text("No immediate gaps flagged."))
-
-    return pdf.output(dest="S").encode("latin-1", "ignore")
-
-# =========================
-# MAIN ROUTER
-# =========================
-header()
-step = st.session_state.step
-if step == 1:
-    section_1()
-elif step == 2:
-    section_2()
-elif step == 3:
-    section_3()
-elif step == 4:
-    section_4()
-elif step == 5:
-    section_5()
-elif step == 6:
-    # Show summary and export
-    section_summary()
-
-    # Offer PDF export (includes intake; also includes assessment traffic-lights if already done)
-    a = st.session_state.answers
-    profile = {
-        "Type": a.get("business_type", "—"),
-        "Size": a.get("team_size", "—"),
-        "Mode": a.get("business_mode", "—"),
-        "Years": a.get("years_in_business", "—"),
-        "Turnover": a.get("turnover", "—"),
-        "Online sales": a.get("online_sales", "—"),
-        "Data handled": a.get("stores_data", "—"),
-        "Digital tools": ", ".join(a.get("daily_tools", [])) or "—",
-        "Website ownership": a.get("website_manager", "—"),
-        "IT support": a.get("it_support", "—"),
-        "System setup": a.get("system_setup", "—"),
-        "Asset inventory": a.get("asset_list", "—"),
-        "Partners": a.get("partners", "—"),
-        "Partner count": a.get("num_partners", "—"),
-        "Third-party breach plan": a.get("breach_response", "—"),
-        "Confidence": a.get("preparedness", "—"),
-        "Past incident": a.get("past_incident", "—"),
-        "Knows who to call": a.get("knows_help", "—"),
-    }
-    intake_scores = compute_scores_from_intake(a)
-    intake_overall = overall_readiness(intake_scores)
-
-    ds = st.session_state.get("domain_scores")
-    assessment_overall = None
-    rights = wrongs = None
-    if ds:
-        overall_val = int(sum(ds.values()) / max(1, len(ds)))
-        assessment_overall = (
-            overall_val,
-            "Strong" if overall_val >= 75 else "Moderate" if overall_val >= 50 else "Needs Attention"
-        )
-        rights, wrongs = extract_right_wrong(a, st.session_state.get("assessment_answers", {}))
-
-    st.subheader("Export")
-    pdf_bytes = generate_pdf(profile, intake_scores, intake_overall, ds, assessment_overall, rights, wrongs)
-    st.download_button(
-        "Generate PDF Report",
-        data=pdf_bytes,
-        file_name="SME_Cyber_Assessment_Report.pdf",
-        mime="application/pdf"
-    )
-
-elif step == 7:
-    section_assessment()
-elif step == 8:
-    section_assessment_results()
+# ---------- Router ----------
+if st.session_state.page == "landing":
+    hero()
+elif st.session_state.page == "assessment":
+    question_screen()
+elif st.session_state.page == "results":
+    results_screen()
