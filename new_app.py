@@ -344,4 +344,13 @@ with st.container():
         section_5()
     else:
         section_summary()
+    # ===== PDF Export =====
+    st.markdown("### 📄 Export")
+    pdf_bytes = generate_pdf(profile, scores, actions, (avg, label))
+    st.download_button(
+        "⬇️ Generate PDF Report",
+        data=pdf_bytes,
+        file_name="SME_Cyber_Assessment_Report.pdf",
+        mime="application/pdf"
+    )
 
