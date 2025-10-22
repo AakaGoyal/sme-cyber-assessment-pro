@@ -1,77 +1,92 @@
-# new_app.py
-# SME Cyber Risk Self-Assessment — clean build with key fixes
-# Stack: Streamlit + FPDF (no DB, no external services)
-
 import streamlit as st
 from fpdf import FPDF
 from datetime import datetime
 
-# ------------- Page config -------------
 st.set_page_config(page_title="SME Cyber Risk Self-Assessment", page_icon="🛡️", layout="centered")
 
-# ------------- Styles -------------
-st.markdown("""
+# ---------------- THEME (light) ----------------
+LIGHT_CSS = """
 <style>
-html, body, [class^="css"]  { font-family: Inter, -apple-system, system-ui, Segoe UI, Roboto, Helvetica, Arial, sans-serif; }
-:root { --bg:#0a0a0a; --fg:#ffffff; --muted:#9AA0A6; --accent:#007AFF; }
-.block-container { padding-top: 2rem !important; }
-
-.hero { background: #0a0a0a; color: #fff; padding: 72px 36px; border-radius: 20px;
-        border: 1px solid #111; box-shadow: 0 10px 30px rgba(0,0,0,.35);}
-.hero h1 { font-size: 44px; line-height: 1.06; margin: 0 0 10px; letter-spacing: -0.02em; }
-.hero p { font-size: 18px; color: #c8c8c8; margin: 0; }
-
-.step { font-size: 12px; letter-spacing:.14em; color:#9AA0A6; text-transform:uppercase; margin: 6px 0 2px; }
-.q { font-size: 22px; font-weight: 700; margin: 4px 0 10px; }
-
-.grid { display:grid; grid-template-columns: repeat(2, minmax(200px,1fr)); gap:12px; margin: 10px 0 12px; }
-@media (min-width: 900px) { .grid { grid-template-columns: repeat(4, 1fr);} }
-
-/* Make Streamlit buttons behave like blocks */
-.stButton > button {
-  width: 100%; height: 80px; border-radius: 16px; border: 1px solid #17191c;
-  background: #101214; color: #ECEDEE; font-weight: 600;
+:root{
+  --bg:#ffffff; --surface:#f7f8fa; --surface2:#ffffff; --text:#0b1220; --muted:#6b7280;
+  --primary:#4F46E5; /* indigo-600 */
+  --ring: rgba(79,70,229,.35);
+  --border:#e6e7eb;
 }
-.stButton > button:hover { transform: translateY(-1px); border-color:#2a2f36; box-shadow:0 6px 16px rgba(0,0,0,.35); }
+.block-container{padding-top:1.6rem!important; max-width:920px;}
+/* Header hero */
+.hero{background:var(--surface2); border:1px solid var(--border); border-radius:24px; padding:28px 22px;}
+.kicker{font-size:.78rem; letter-spacing:.14em; color:var(--muted); text-transform:uppercase; margin-bottom:.25rem;}
+.hero h1{font-size:2rem; line-height:1.2; margin:0; color:var(--text);}
+.hero p{margin:.35rem 0 0; color:#60646c;}
 
-.nav { display:flex; gap:8px; justify-content: space-between; margin-top: 4px; }
-.nav .next, .nav .back {
-  border-radius: 999px; padding: 10px 16px; font-weight: 700; border: none;
+/* Progress pills */
+.pills{display:flex; flex-wrap:wrap; gap:8px; margin:14px 0 6px;}
+.pill{background:#f0f1f5; color:#2e3138; border:1px solid #eceff3; border-radius:999px; padding:6px 10px; font-weight:600; font-size:.85rem;}
+.pill.active{background:var(--primary); color:#fff; border-color:var(--primary);}
+.pill.done{background:#e8f5ee; color:#117a3a; border-color:#d6f0e1;}
+.pill span{opacity:.85}
+
+/* Question */
+.qwrap{background:var(--surface); border:1px solid var(--border); border-radius:22px; padding:22px 18px; margin-top:10px;}
+.qtitle{font-size:1.35rem; color:var(--text); font-weight:800;}
+.qsubtitle{color:#3f4248; font-size:1rem; margin-top:6px;}
+
+/* Options grid -> rounded cards */
+.grid{display:grid; grid-template-columns:1fr; gap:12px; margin-top:14px;}
+@media(min-width:820px){ .grid{grid-template-columns:1fr 1fr;} }
+
+.opt button{
+  width:100%; background:var(--surface2); color:var(--text); border:1px solid var(--border);
+  border-radius:18px; padding:16px 14px; text-align:left; font-weight:700;
+  display:flex; align-items:center; gap:12px; transition:.15s ease; box-shadow:none;
 }
-.nav .next { background: #fff; color: #000; }
-.nav .back { background: #1b1f24; color: #fff; }
+.opt button:hover{transform:translateY(-1px); border-color:#dfe2e6;}
+.opt button:focus{outline:4px solid var(--ring); border-color:var(--primary);}
+.opt .dot{
+  width:18px; height:18px; border-radius:999px; border:2px solid #cfd3da; display:inline-block; position:relative;
+}
+.opt.selected .dot{ border-color:var(--primary); }
+.opt.selected .dot::after{
+  content:''; position:absolute; inset:3px; border-radius:999px; background:var(--primary);
+}
+/* Nav buttons */
+.nav{display:flex; gap:10px; justify-content:space-between; margin-top:14px;}
+.btn{border:1px solid var(--border); background:#fff; color:var(--text); padding:10px 16px; border-radius:999px; font-weight:800;}
+.btn.primary{background:var(--text); color:#fff; border-color:#0b1220;}
+.btn.primary:hover{filter:brightness(0.95);}
 
-.tiles { display:grid; grid-template-columns: repeat(2, minmax(230px,1fr)); gap:12px; margin-top: 12px; }
-@media (min-width: 900px) { .tiles { grid-template-columns: repeat(3, 1fr);} }
-.tile { border-radius:16px; padding:16px; color:#0a0a0a; background:#f6f7f8; border:1px solid #e6e6e6; }
-.badge { font-weight:700; padding:4px 10px; border-radius:999px; font-size:12px; display:inline-block; }
-.badge.red { background:#ffe6ea; color:#b00020; }
-.badge.orange { background:#fff0e0; color:#b24a00; }
-.badge.yellow { background:#fff9db; color:#8a6d00; }
-.badge.green { background:#e8f9ef; color:#0f7a3a; }
-
-.hr { height:1px; background: linear-gradient(90deg, transparent, #1c1f24, transparent); margin: 18px 0; }
+/* Result tiles */
+.tiles{display:grid; grid-template-columns:1fr; gap:12px; margin-top:12px;}
+@media(min-width:820px){ .tiles{grid-template-columns:repeat(3,1fr);} }
+.tile{background:var(--surface2); border:1px solid var(--border); border-radius:18px; padding:16px;}
+.badge{font-weight:800; font-size:.8rem; padding:4px 10px; border-radius:999px; display:inline-block;}
+.badge.red{background:#fee2e2; color:#991b1b;}
+.badge.orange{background:#ffedd5; color:#9a3412;}
+.badge.yellow{background:#fef9c3; color:#854d0e;}
+.badge.green{background:#dcfce7; color:#166534;}
+.hr{height:1px; background:linear-gradient(90deg,transparent,#eceff3,transparent); margin:16px 0;}
+.small{color:var(--muted); font-size:.9rem;}
 </style>
-""", unsafe_allow_html=True)
+"""
+st.markdown(LIGHT_CSS, unsafe_allow_html=True)
 
-# ------------- Session state -------------
+# ---------------- State ----------------
 if "page" not in st.session_state: st.session_state.page = "landing"
-if "profile_data" not in st.session_state: st.session_state.profile_data = {}
-if "answers" not in st.session_state: st.session_state.answers = {}   # {q_index: score}
-if "q_index" not in st.session_state: st.session_state.q_index = 0
+if "profile" not in st.session_state: st.session_state.profile = {}
+if "answers" not in st.session_state: st.session_state.answers = {}
+if "idx" not in st.session_state: st.session_state.idx = 0
 
-# ------------- Domains & Questions -------------
 DOMAINS = [
-    ("Governance & Risk", "GOV"),
-    ("Identity & Access Management", "IAM"),
-    ("Data Protection & Privacy", "DPP"),
-    ("Network & Infrastructure", "NET"),
-    ("Incident Response & Recovery", "IR"),
-    ("Awareness & AI Risk", "AIA"),
+    ("Governance & Risk","GOV"),
+    ("Identity & Access Management","IAM"),
+    ("Data Protection & Privacy","DPP"),
+    ("Network & Infrastructure","NET"),
+    ("Incident Response & Recovery","IR"),
+    ("Awareness & AI Risk","AIA"),
 ]
 
 QUESTIONS = [
-    # GOV
     ("GOV","Do you have documented security responsibilities?",
         [("No / not sure",1),("Some notes exist",2),("Yes, basic doc",3),("Yes, reviewed annually",4)]),
     ("GOV","Do you assess risks at least annually?",
@@ -81,7 +96,6 @@ QUESTIONS = [
     ("GOV","Joiner/leaver access managed?",
         [("Ad-hoc",2),("Basic",3),("Formal within 24h",4),("Automated",5)]),
 
-    # IAM
     ("IAM","MFA enabled for email/admin tools?",
         [("No",1),("Some staff",3),("All accounts",4),("All + conditional access",5)]),
     ("IAM","Password manager in use?",
@@ -91,7 +105,6 @@ QUESTIONS = [
     ("IAM","Leaver access removed within 24h?",
         [("Days/weeks",1),("72h",2),("24–48h",3),("Same day",4)]),
 
-    # DPP
     ("DPP","Backups exist & tested?",
         [("None",1),("Ad-hoc",2),("Regular backups",3),("Tested restores",4)]),
     ("DPP","Minimal personal data collected?",
@@ -101,7 +114,6 @@ QUESTIONS = [
     ("DPP","Privacy notice & consent on Wi-Fi/loyalty?",
         [("No",1),("Basic",2),("Yes",3),("Yes + reviewed",4)]),
 
-    # NET
     ("NET","Router/POS firmware & patches?",
         [("Rarely",1),("Sometimes",2),("Monthly",3),("Automated/managed",4)]),
     ("NET","Guest Wi-Fi isolated from POS?",
@@ -111,7 +123,6 @@ QUESTIONS = [
     ("NET","Default creds removed everywhere?",
         [("Not sure",1),("Mostly",2),("Yes",3),("Yes + periodic audit",4)]),
 
-    # IR
     ("IR","Incident playbook exists?",
         [("No",1),("Draft",2),("Yes",3),("Yes + drills",4)]),
     ("IR","Contacts list (bank/IT/processor)?",
@@ -121,7 +132,6 @@ QUESTIONS = [
     ("IR","Phishing/reporting channel defined?",
         [("No",1),("Email to IT",2),("Button/alias",3),("Button + triage SOP",4)]),
 
-    # AIA
     ("AIA","Staff training (incl. AI-aware) frequency?",
         [("Never",1),("Annual",2),("Quarterly micro",3),("Quarterly + role-based",4)]),
     ("AIA","Phishing simulations in last 12m?",
@@ -141,158 +151,119 @@ FEEDBACK = {
     "AIA":{"good":"Some awareness exists across staff.","improve":"Add quarterly AI-aware micro-training and one phishing simulation."},
 }
 
-# ------------- Helpers -------------
-def domain_scores(answer_map: dict):
-    """Return average score per domain code."""
+def domain_scores(answers):
     buckets = {code: [] for _, code in DOMAINS}
-    for i, (code, _, _) in enumerate(QUESTIONS):
-        if i in answer_map:
-            buckets[code].append(answer_map[i])
-    return {code: (sum(v)/len(v) if v else 0.0) for code, v in buckets.items()}
+    for i, (code,_,_) in enumerate(QUESTIONS):
+        if i in answers: buckets[code].append(answers[i])
+    return {code: (sum(v)/len(v) if v else 0.0) for code,v in buckets.items()}
 
-def label_for(score: float):
-    if score < 2: return "red", "🔴 Initial"
-    if score < 3: return "orange", "🟠 Developing"
-    if score < 4: return "yellow", "🟡 Defined"
-    return "green", "🟢 Managed/Optimised"
-
-def export_pdf(profile: dict, scores: dict, overall: float) -> str:
-    pdf = FPDF()
-    pdf.add_page()
-    pdf.set_font("Arial", "B", 16)
-    pdf.cell(0, 10, "Cyber Risk Self-Assessment Report", ln=1)
-    pdf.set_font("Arial", "", 12)
-    pdf.cell(0, 8, f"Organisation: {profile.get('name','')}", ln=1)
-    pdf.cell(0, 8, f"Sector: {profile.get('sector','')}", ln=1)
-    pdf.cell(0, 8, f"Employees: {profile.get('staff','')}", ln=1)
-    pdf.cell(0, 8, f"Date: {datetime.now().strftime('%Y-%m-%d %H:%M')}", ln=1)
-    pdf.ln(3)
-    pdf.set_font("Arial", "B", 12)
-    pdf.cell(0, 8, f"Overall Maturity: {overall:.2f} / 5", ln=1)
-    pdf.ln(2)
-    pdf.set_font("Arial", "", 12)
-    for title, code in DOMAINS:
-        s = scores[code]
-        _, tag = label_for(s)
-        pdf.cell(0, 7, f"- {title}: {s:.2f}  ({tag})", ln=1)
-    pdf.ln(2)
-    pdf.set_font("Arial","B",12); pdf.cell(0,8,"Quick Recommendations", ln=1)
-    pdf.set_font("Arial","",12)
-    for title, code in DOMAINS:
-        pdf.multi_cell(0,6, f"{title}: {FEEDBACK[code]['improve']}")
-    filename = f"assessment_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pdf"
-    pdf.output(filename)
-    return filename
+def label_for(score):
+    if score < 2: return "red","🔴 Initial"
+    if score < 3: return "orange","🟠 Developing"
+    if score < 4: return "yellow","🟡 Defined"
+    return "green","🟢 Managed/Optimised"
 
 # ------------- Screens -------------
-def screen_landing():
+def landing():
     st.markdown("""
     <div class="hero">
-      <div class="step">SME Cybersecurity</div>
+      <div class="kicker">SME cybersecurity</div>
       <h1>Social-engineering risk self-assessment</h1>
-      <p>Clean, fast, and human-centred. One question at a time — no clutter, no charts.</p>
+      <p>Simple, human-centred and fast. One question per screen.</p>
     </div>
     """, unsafe_allow_html=True)
-
     with st.form("frm_profile"):
-        st.write("")  # spacing
-        name = st.text_input("Business name", key="pf_name", placeholder="e.g., Café Aurora")
-        sector = st.selectbox("Sector", ["Hospitality","Retail","Consulting","Healthcare","Other"], key="pf_sector")
-        staff = st.number_input("Employees", min_value=1, max_value=500, value=12, key="pf_staff")
+        name = st.text_input("Business name", placeholder="e.g., Café Aurora")
         colA, colB = st.columns(2)
-        it_provider = colA.selectbox("External IT provider", ["No","Yes, ad-hoc","Yes, managed"], key="pf_it")
-        incident = colB.selectbox("Any incidents in last 12 months?", ["No","Yes (unsure impact)","Yes (reported)"], key="pf_inc")
-        submitted = st.form_submit_button("Start Assessment")
+        sector = colA.selectbox("Sector", ["Hospitality","Retail","Consulting","Healthcare","Other"])
+        staff = colB.number_input("Employees", 1, 500, 12)
+        submitted = st.form_submit_button("Start")
     if submitted:
-        st.session_state.profile_data = {
-            "name": name.strip() if name else "—",
-            "sector": sector, "staff": staff,
-            "it_provider": it_provider, "incident": incident
-        }
-        st.session_state.page = "assessment"
-        st.session_state.q_index = 0
-        st.session_state.answers = {}
+        st.session_state.profile = {"name": name or "—", "sector": sector, "staff": staff}
+        st.session_state.page = "q"
 
-def screen_question():
-    idx = st.session_state.q_index
+def pills(current_idx):
+    # render domain progress pills (done/active/next)
+    total = len(QUESTIONS)
+    # figure current domain
+    code_now = QUESTIONS[min(current_idx, total-1)][0]
+    html = ['<div class="pills">']
+    for title, code in DOMAINS:
+        cls = "pill"
+        if code == code_now: cls += " active"
+        # mark done if every question of that domain already answered
+        done = True
+        for i,(c,_,_) in enumerate(QUESTIONS):
+            if c==code and i not in st.session_state.answers:
+                done=False; break
+        if done and code != code_now: cls += " done"
+        html.append(f'<div class="{cls}">{title}</div>')
+    html.append("</div>")
+    st.markdown("".join(html), unsafe_allow_html=True)
+
+def question():
+    idx = st.session_state.idx
     if idx >= len(QUESTIONS):
-        st.session_state.page = "results"
-        return
+        st.session_state.page = "results"; return
 
     code, qtext, options = QUESTIONS[idx]
-    domain_title = next(title for title, c in DOMAINS if c == code)
+    pills(idx)
 
-    st.markdown(f"<div class='step'>{domain_title}</div>", unsafe_allow_html=True)
-    st.markdown(f"<div class='q'>{qtext}</div>", unsafe_allow_html=True)
+    st.markdown('<div class="qwrap">', unsafe_allow_html=True)
+    st.markdown(f'<div class="qtitle">{qtext}</div>', unsafe_allow_html=True)
 
-    # Block-style options (buttons in a grid)
-    st.markdown("<div class='grid'>", unsafe_allow_html=True)
-    cols = st.columns(4)
-    for i, (label, score) in enumerate(options):
-        with cols[i % 4]:
-            if st.button(label, key=f"opt_{idx}_{i}", use_container_width=True):
+    st.markdown('<div class="grid">', unsafe_allow_html=True)
+    cols = st.columns(2)
+    for i,(label,score) in enumerate(options):
+        key = f"opt_{idx}_{i}"
+        selected = (st.session_state.answers.get(idx)==score)
+        classes = "opt selected" if selected else "opt"
+        with cols[i%2]:
+            # we still use a button for speed; style gives card+radio feel
+            clicked = st.button(f"  {label}", key=key, use_container_width=True)
+            # re-render the dot overlay
+            st.markdown(f'<div class="{classes}"><span class="dot"></span></div>', unsafe_allow_html=True)
+            if clicked:
                 st.session_state.answers[idx] = score
-    st.markdown("</div>", unsafe_allow_html=True)
+    st.markdown('</div>', unsafe_allow_html=True)
 
-    # Nav
     colL, colR = st.columns(2)
-    if colL.button("← Back", key=f"back_{idx}", use_container_width=True, help="Previous question", disabled=(idx == 0)):
-        st.session_state.q_index = max(0, idx - 1)
-        st.experimental_rerun()
-
-    if colR.button("Next →", key=f"next_{idx}", use_container_width=True, help="Next question"):
+    if colL.button("← Back", use_container_width=True, disabled=(idx==0)):
+        st.session_state.idx = max(0, idx-1); st.experimental_rerun()
+    if colR.button("Next →", use_container_width=True):
         if idx not in st.session_state.answers:
             st.warning("Please select an option to continue.")
         else:
-            st.session_state.q_index = idx + 1
-            st.experimental_rerun()
+            st.session_state.idx = idx+1; st.experimental_rerun()
+    st.markdown('</div>', unsafe_allow_html=True)  # qwrap
 
-def screen_results():
+def results():
     scores = domain_scores(st.session_state.answers)
-    overall = sum(scores.values()) / len(DOMAINS)
-
-    st.markdown("## Results")
-    st.caption("Traffic-light tiles — concise and readable.")
-    st.markdown("<div class='tiles'>", unsafe_allow_html=True)
+    overall = sum(scores.values())/len(DOMAINS)
+    st.markdown("### Results")
+    st.caption("Traffic-light tiles — clear at a glance.")
+    st.markdown('<div class="tiles">', unsafe_allow_html=True)
     for title, code in DOMAINS:
-        s = scores[code]
-        color, tag = label_for(s)
+        s = scores[code]; color, tag = label_for(s)
         st.markdown(
-            f"<div class='tile'><div class='badge {color}'>{tag}</div>"
-            f"<div style='height:8px'></div>"
-            f"<div style='font-weight:700; font-size:18px'>{title}</div>"
-            f"<div style='color:#4a4f55; margin-top:6px'>Score: {s:.2f} / 5</div>"
-            f"</div>", unsafe_allow_html=True
-        )
-    st.markdown("</div>", unsafe_allow_html=True)
-
-    st.markdown("<div class='hr'></div>", unsafe_allow_html=True)
+            f'<div class="tile"><div class="badge {color}">{tag}</div>'
+            f'<div style="height:8px"></div>'
+            f'<div style="font-weight:800; font-size:18px">{title}</div>'
+            f'<div class="small">Score: {s:.2f} / 5</div></div>',
+            unsafe_allow_html=True)
+    st.markdown('</div>', unsafe_allow_html=True)
+    st.markdown('<div class="hr"></div>', unsafe_allow_html=True)
     st.subheader(f"Overall maturity: {overall:.2f} / 5")
+    st.markdown("**What you're doing well**")
+    for title,code in DOMAINS: st.write(f"- **{title}:** {FEEDBACK[code]['good']}")
+    st.markdown("**What to improve next**")
+    for title,code in DOMAINS: st.write(f"- **{title}:** {FEEDBACK[code]['improve']}")
 
-    st.markdown("### What you're doing well")
-    for title, code in DOMAINS:
-        st.write(f"- **{title}:** {FEEDBACK[code]['good']}")
-
-    st.markdown("### What to improve next")
-    for title, code in DOMAINS:
-        st.write(f"- **{title}:** {FEEDBACK[code]['improve']}")
-
-    st.markdown("<div class='hr'></div>", unsafe_allow_html=True)
-    if st.button("📄 Export PDF report", key="export_pdf"):
-        filename = export_pdf(st.session_state.profile_data, scores, overall)
-        with open(filename, "rb") as f:
-            st.download_button("Download report", f, file_name=filename, mime="application/pdf")
-
-    if st.button("↺ Restart", key="restart"):
-        st.session_state.page = "landing"
-        st.session_state.q_index = 0
-        st.session_state.answers = {}
-        st.experimental_rerun()
+    col1, col2 = st.columns(2)
+    if col1.button("↺ Restart"):
+        st.session_state.page="landing"; st.session_state.idx=0; st.session_state.answers={}; st.experimental_rerun()
 
 # ------------- Router -------------
-if st.session_state.page == "landing":
-    screen_landing()
-elif st.session_state.page == "assessment":
-    screen_question()
-elif st.session_state.page == "results":
-    screen_results()
+if st.session_state.page=="landing": landing()
+elif st.session_state.page=="q": question()
+elif st.session_state.page=="results": results()
