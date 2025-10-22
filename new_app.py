@@ -1,262 +1,490 @@
-# new_app.py — SME Cyber Risk Self-Assessment (clean light UI, fixed keys)
-# Only dependency: streamlit
-
 import streamlit as st
+from typing import List, Dict, Any
 
-# ------------------ page config ------------------
-st.set_page_config(page_title="SME Cyber Risk Self-Assessment", page_icon="🛡️", layout="centered")
+# -----------------------------
+# Page & Styles
+# -----------------------------
+st.set_page_config(
+    page_title="SME Initial Assessment (Conversational)",
+    page_icon="💬",
+    layout="wide"
+)
 
-# ------------------ light styles ------------------
-st.markdown("""
+CUSTOM_CSS = """
 <style>
-:root{
-  --bg:#FFFFFF; --surface:#F7F8FA; --surface2:#FFFFFF;
-  --text:#0B1220; --muted:#6B7280; --primary:#2563EB; --border:#E6E7EB;
+/* Chat bubbles */
+.stChatMessage[data-testid="stChatMessage"] .stMarkdown p {
+  margin-bottom: 0.3rem;
 }
-html, body { background: var(--bg) !important; color: var(--text); }
-.block-container{ max-width: 960px; padding-top: 1.25rem !important; }
-*{ font-size: 16px; }
-
-/* header */
-.hero{ background: var(--surface2); border:1px solid var(--border); border-radius: 20px; padding: 28px 22px; }
-.kicker{ font-size:.85rem; letter-spacing:.14em; color: var(--muted); text-transform: uppercase; margin-bottom:.25rem; }
-.hero h1{ margin:0; font-size: 2.2rem; line-height:1.25; font-weight: 900; }
-
-/* pills */
-.pills{ display:flex; flex-wrap:wrap; gap:8px; margin:14px 0 10px; }
-.pill{ background:#EEF1F6; color:#2E3138; border:1px solid var(--border); border-radius: 999px; padding:8px 12px; font-weight:700; font-size:.95rem; }
-.pill.active{ background: var(--primary); color:#fff; border-color: var(--primary); }
-.pill.done{ background:#E9F7EF; color:#106B35; border-color:#D5EFDF; }
-
-/* progress bar */
-.progress{ height:10px; background:#EEF1F6; border:1px solid var(--border); border-radius:999px; overflow:hidden; }
-.progress > div{ height:100%; background: var(--primary); width:0%; transition: width .25s ease; }
-
-/* question box */
-.box{ background: var(--surface); border:1px solid var(--border); border-radius: 18px; padding: 18px; margin-top: 14px; }
-.q{ font-size: 1.45rem; font-weight: 900; margin: 0 0 8px; }
-
-/* radio as cards */
-.stRadio [role="radiogroup"]{ display:grid; grid-template-columns:1fr; gap: 12px; }
-@media(min-width:860px){ .stRadio [role="radiogroup"]{ grid-template-columns:1fr 1fr; } }
-.stRadio label{ width:100%; }
-.stRadio div[role="radio"]{
-  width:100%; min-height: 82px; padding:16px 14px; border-radius:16px;
-  border:1px solid var(--border); background: var(--surface2);
-  display:flex; align-items:center; font-weight:800; color: var(--text);
-  box-shadow:none;
+.assistant-bubble {
+  background: #f7f7fb;
+  border: 1px solid #ececf5;
+  padding: 12px 14px;
+  border-radius: 14px;
 }
-.stRadio div[role="radio"][aria-checked="true"]{
-  outline: 3px solid rgba(37,99,235,.25); border-color: var(--primary);
+.user-bubble {
+  background: #e9f7ff;
+  border: 1px solid #d7eefc;
+  padding: 12px 14px;
+  border-radius: 14px;
 }
-
-/* nav buttons */
-.actions{ display:flex; gap:10px; margin-top: 14px; }
-.btn{ border:1px solid var(--border); background:#fff; color:var(--text); padding:10px 16px; border-radius:999px; font-weight:900; }
-.btn.primary{ background: var(--primary); color:#fff; border-color: var(--primary); }
-
-/* results */
-.tiles{ display:grid; grid-template-columns:1fr; gap:12px; margin-top: 12px; }
-@media(min-width:860px){ .tiles{ grid-template-columns: repeat(3,1fr);} }
-.tile{ background:#fff; border:1px solid var(--border); border-radius:16px; padding:16px; }
-.badge{ display:inline-block; padding:6px 12px; border-radius:999px; font-weight:900; font-size:.9rem; }
-.badge.red{ background:#FEE2E2; color:#991B1B; }
-.badge.orange{ background:#FFEDD5; color:#9A3412; }
-.badge.yellow{ background:#FEF9C3; color:#854D0E; }
-.badge.green{ background:#DCFCE7; color:#166534; }
-.small{ color: var(--muted); font-size:.98rem; }
-.hr{ height:1px; background: linear-gradient(90deg,transparent,#ECEFF3,transparent); margin:16px 0; }
+/* Cards */
+.card {
+  border: 1px solid #eaeaea;
+  border-radius: 14px;
+  padding: 16px;
+  background: white;
+}
+.small {
+  font-size: 0.9rem;
+  color: #666;
+}
+/* Quick reply buttons */
+.quick-btn > button {
+  width: 100%;
+  border-radius: 12px !important;
+}
+/* Progress label */
+.progress-label {
+  font-size: 0.9rem;
+  color: #555;
+  margin-top: 4px;
+}
 </style>
-""", unsafe_allow_html=True)
+"""
+st.markdown(CUSTOM_CSS, unsafe_allow_html=True)
 
-# ------------------ state ------------------
-if "page" not in st.session_state: st.session_state.page = "welcome"
-if "answers" not in st.session_state: st.session_state.answers = {}   # {q_index: score}
-if "idx" not in st.session_state: st.session_state.idx = 0
-if "user_profile" not in st.session_state: st.session_state.user_profile = {}
+# -----------------------------
+# Session State
+# -----------------------------
+def ss_init():
+    if "stage" not in st.session_state:
+        # stage: "intake" -> "chat" -> (later) "done"
+        st.session_state.stage = "intake"
+    if "messages" not in st.session_state:
+        st.session_state.messages: List[Dict[str, Any]] = []
+    if "profile" not in st.session_state:
+        st.session_state.profile = {
+            "contact_name": "",
+            "business_name": "",
+            "industry": "",
+            "years": "",
+            "headcount": "",
+            "turnover": "",
+            "work_mode": ""
+        }
+    if "answers" not in st.session_state:
+        st.session_state.answers: Dict[str, Any] = {}
+    if "q_index" not in st.session_state:
+        st.session_state.q_index = 0
+    if "asked_ids" not in st.session_state:
+        st.session_state.asked_ids = set()
 
-DOMAINS = [
-    ("Governance & Risk","GOV"), ("Identity & Access Management","IAM"),
-    ("Data Protection & Privacy","DPP"), ("Network & Infrastructure","NET"),
-    ("Incident Response & Recovery","IR"), ("Awareness & AI Risk","AIA"),
-]
+ss_init()
 
+# -----------------------------
+# Question Bank (Phase-driven)
+# (Derived from the uploaded "Initial Assessment" phases)
+# -----------------------------
 QUESTIONS = [
-    # GOV
-    ("GOV","Do you have documented security responsibilities?",
-        [("No / not sure",1),("Some notes exist",2),("Yes, basic doc",3),("Yes, reviewed annually",4)]),
-    ("GOV","Do you assess risks at least annually?",
-        [("Never",1),("Informal only",2),("Annual checklist",3),("Formal register + actions",4)]),
-    ("GOV","Are suppliers (POS/loyalty/app) risk-checked?",
-        [("No",1),("Basic check",2),("Contract clauses",3),("Checklist + review cycle",4)]),
-    ("GOV","Joiner/leaver access managed?",
-        [("Ad-hoc",2),("Basic",3),("Within 24h",4),("Automated",5)]),
-    # IAM
-    ("IAM","MFA enabled for email/admin tools?",
-        [("No",1),("Some staff",3),("All accounts",4),("All + conditional access",5)]),
-    ("IAM","Password manager in use?",
-        [("No",1),("Optional",2),("Yes, adopted",4),("Yes + SSO",5)]),
-    ("IAM","Unique accounts per staff/device?",
-        [("Shared accounts",1),("Mixed",2),("Unique",3),("Unique + review",4)]),
-    ("IAM","Leaver access removed within 24h?",
-        [("Days/weeks",1),("72h",2),("24–48h",3),("Same day",4)]),
-    # DPP
-    ("DPP","Backups exist & tested?",
-        [("None",1),("Ad-hoc",2),("Regular backups",3),("Tested restores",4)]),
-    ("DPP","Minimal personal data collected?",
-        [("Don’t know",1),("Some minimisation",2),("Yes, defined",3),("Yes + DPIA if needed",4)]),
-    ("DPP","Cardholder data stored locally?",
-        [("Yes",1),("Unsure",2),("No, processor only",4),("Tokenised controls",5)]),
-    ("DPP","Privacy notice & consent on Wi-Fi/loyalty?",
-        [("No",1),("Basic",2),("Yes",3),("Yes + reviewed",4)]),
-    # NET
-    ("NET","Router/POS firmware & patches?",
-        [("Rarely",1),("Sometimes",2),("Monthly",3),("Automated/managed",4)]),
-    ("NET","Guest Wi-Fi isolated from POS?",
-        [("No",1),("Partially",2),("Separate SSID/VLAN",3),("Separated + ACLs",4)]),
-    ("NET","Endpoint protection on devices?",
-        [("No",1),("Basic AV",2),("AV + auto updates",3),("EDR + alerts",4)]),
-    ("NET","Default creds removed everywhere?",
-        [("Not sure",1),("Mostly",2),("Yes",3),("Yes + periodic audit",4)]),
-    # IR
-    ("IR","Incident playbook exists?",
-        [("No",1),("Draft",2),("Yes",3),("Yes + drills",4)]),
-    ("IR","Contacts list (bank/IT/processor)?",
-        [("No",1),("Partial",2),("Yes",3),("Yes + wallet card",4)]),
-    ("IR","Restore test in last 6 months?",
-        [("Never",1),("Over a year",2),("Yes",3),("Yes + recorded",4)]),
-    ("IR","Phishing/reporting channel defined?",
-        [("No",1),("Email to IT",2),("Button/alias",3),("Button + triage SOP",4)]),
-    # AIA
-    ("AIA","Staff training (incl. AI-aware) frequency?",
-        [("Never",1),("Annual",2),("Quarterly micro",3),("Quarterly + role-based",4)]),
-    ("AIA","Phishing simulations in last 12m?",
-        [("No",1),("Once",2),("Quarterly",3),("Quarterly + targeted",4)]),
-    ("AIA","Guidance on deepfakes/voice scams?",
-        [("No",1),("Basic tips",2),("Playbook",3),("Playbook + drills",4)]),
-    ("AIA","Cashier/shift fraud checks (refunds/cards)?",
-        [("No",1),("Some checks",2),("Checklist",3),("Checklist + approvals",4)]),
+    # Phase 1 – Understanding the Business
+    {
+        "id": "sell_online",
+        "phase": "Digital Footprint",
+        "text": "Do you sell products or deliver services online?",
+        "type": "choice",
+        "choices": [
+            "Yes – on my own website",
+            "Yes – via marketplaces (Amazon/Etsy)",
+            "No – mostly offline"
+        ],
+        "tip": "This helps us understand your online exposure and dependencies."
+    },
+    {
+        "id": "data_types",
+        "phase": "Digital Footprint",
+        "text": "Do you store customer or employee information (e.g., emails, invoices, payment info)?",
+        "type": "choice",
+        "choices": ["Yes", "No"],
+        "tip": "Handling personal data increases your duty of care and regulatory exposure."
+    },
+    {
+        "id": "tools_regular",
+        "phase": "Digital Footprint",
+        "text": "Which of these do you rely on daily? (pick all that apply in sequence)",
+        "type": "multi",
+        "choices": [
+            "Email",
+            "Accounting/finance software",
+            "CRM or client database",
+            "Cloud storage (Google Drive/OneDrive etc.)",
+            "Online payment system",
+            "Website or webshop"
+        ],
+        "tip": "This identifies where your critical information and daily operations live."
+    },
+    # Phase 3 – IT Ownership and Responsibility
+    {
+        "id": "website_owner",
+        "phase": "IT Ownership",
+        "text": "Who looks after your website and online systems?",
+        "type": "choice",
+        "choices": [
+            "I do it myself",
+            "Someone on my team",
+            "An external company or freelancer"
+        ]
+    },
+    {
+        "id": "it_support",
+        "phase": "IT Ownership",
+        "text": "Who takes care of your computers, email and systems when something needs setup/fixing?",
+        "type": "choice",
+        "choices": [
+            "I do",
+            "A friend/freelancer",
+            "An IT company",
+            "In-house IT team"
+        ]
+    },
+    {
+        "id": "setup_by",
+        "phase": "IT Ownership",
+        "text": "Did you personally set up your main systems (email, website, backups)?",
+        "type": "choice",
+        "choices": [
+            "Yes, mostly me",
+            "Shared effort",
+            "Someone else handled it"
+        ]
+    },
+    {
+        "id": "asset_list",
+        "phase": "IT Ownership",
+        "text": "Do you have a clear list of systems, accounts and devices you use?",
+        "type": "choice",
+        "choices": [
+            "Yes, documented",
+            "Rough idea",
+            "Not really"
+        ]
+    },
+    # Phase 4 – Partners & Ecosystem
+    {
+        "id": "third_parties",
+        "phase": "Partners",
+        "text": "Do you work with external partners who handle your data or systems (host, accountant, logistics, marketing tools)?",
+        "type": "choice",
+        "choices": ["Yes", "No"]
+    },
+    {
+        "id": "partner_count",
+        "phase": "Partners",
+        "text": "How many key partners or providers do you rely on?",
+        "type": "choice",
+        "choices": ["0–2", "3–5", "6+"]
+    },
+    {
+        "id": "breach_contact",
+        "phase": "Partners",
+        "text": "If a main partner had a breach, would you know who to contact and what to do?",
+        "type": "choice",
+        "choices": ["Yes – I know who to reach", "Not really sure"]
+    },
+    # Phase 5 – Confidence & Experience
+    {
+        "id": "confidence",
+        "phase": "Confidence",
+        "text": "How prepared would you feel if a cyberattack or data loss hit tomorrow?",
+        "type": "choice",
+        "choices": ["Not at all", "Somewhat", "Fairly confident", "Very confident"]
+    },
+    {
+        "id": "past_incidents",
+        "phase": "Confidence",
+        "text": "Have you experienced a cybersecurity issue before (e.g., phishing, data loss, locked computer)?",
+        "type": "choice",
+        "choices": ["Yes", "No", "Not sure"]
+    },
+    {
+        "id": "know_who_to_call",
+        "phase": "Confidence",
+        "text": "Do you know who to call or where to get help if something happened?",
+        "type": "choice",
+        "choices": ["Yes", "No"]
+    },
 ]
 
-FEEDBACK = {
-    "GOV":{"good":"Governance foundations visible.","improve":"Add a simple risk register and quarterly access reviews."},
-    "IAM":{"good":"MFA & password manager set the right baseline.","improve":"Ensure same-day leaver removals; extend MFA broadly."},
-    "DPP":{"good":"Backups + data minimisation practices exist.","improve":"Test restores twice a year; review Wi-Fi/loyalty privacy notices."},
-    "NET":{"good":"Basic segmentation and endpoint controls in place.","improve":"Separate guest Wi-Fi from POS; schedule monthly patching."},
-    "IR":{"good":"Contacts and reporting route mostly defined.","improve":"Create a 1-page incident card and run a 15-minute tabletop drill."},
-    "AIA":{"good":"General awareness exists.","improve":"Quarterly AI-aware micro-training and one phishing simulation."},
-}
+TOTAL_Q = len(QUESTIONS)
 
-# ------------------ helpers ------------------
-def current_domain(idx:int) -> str:
-    return QUESTIONS[min(idx, len(QUESTIONS)-1)][0]
+# -----------------------------
+# Helpers
+# -----------------------------
+def add_message(role: str, content: str):
+    st.session_state.messages.append({"role": role, "content": content})
 
-def make_pills(idx:int):
-    code_now = current_domain(idx)
-    html = ['<div class="pills">']
-    for title, code in DOMAINS:
-        cls = "pill"
-        if code == code_now: cls += " active"
-        done = all(i in st.session_state.answers for i,(c,_,_) in enumerate(QUESTIONS) if c==code)
-        if done and code != code_now: cls += " done"
-        html.append(f'<div class="{cls}">{title}</div>')
-    html.append("</div>")
-    st.markdown("".join(html), unsafe_allow_html=True)
+def next_question_index(current: int) -> int:
+    # Simple sequential flow with a bit of light branching:
+    # - If user answered "No – mostly offline" to sell_online, we still continue normally.
+    # - You can extend with deeper branching as needed.
+    return min(current + 1, TOTAL_Q)
 
-def progress(idx:int):
-    pct = int((idx / len(QUESTIONS)) * 100)
-    st.markdown(f'<div class="progress"><div style="width:{pct}%"></div></div>', unsafe_allow_html=True)
+def friendly_intro(profile: Dict[str, str]) -> str:
+    parts = []
+    if profile.get("business_name"):
+        parts.append(f"{profile['business_name']}")
+    if profile.get("industry"):
+        parts.append(profile["industry"])
+    if profile.get("headcount"):
+        parts.append(f"{profile['headcount']} people")
+    base = " • ".join(parts) if parts else "your business"
+    return (
+        f"Great, thanks! I’ll tailor the questions to **{base}**. "
+        f"We’ll keep it simple and practical—one step at a time."
+    )
 
-def domain_scores(answers:dict):
-    buckets = {code: [] for _, code in DOMAINS}
-    for i, (code, _, _) in enumerate(QUESTIONS):
-        if i in answers: buckets[code].append(answers[i])
-    return {code: (sum(v)/len(v) if v else 0.0) for code, v in buckets.items()}
+def phase_progress_label(idx: int) -> str:
+    if idx >= TOTAL_Q:
+        return "All questions completed"
+    phase = QUESTIONS[idx]["phase"]
+    return f"Now: {phase}"
 
-def label_for(score:float):
-    if score < 2: return "red","🔴 Initial"
-    if score < 3: return "orange","🟠 Developing"
-    if score < 4: return "yellow","🟡 Defined"
-    return "green","🟢 Managed/Optimised"
+def digital_dependency_score(ans: Dict[str, Any]) -> int:
+    score = 0
+    if ans.get("sell_online", "").startswith("Yes"):
+        score += 2
+    if ans.get("data_types") == "Yes":
+        score += 1
+    tools = ans.get("tools_regular", [])
+    score += min(len(tools), 4)  # cap contribution
+    return score  # 0–7 (rough guide)
 
-# ------------------ screens ------------------
-def welcome():
-    st.markdown("""
-      <div class="hero">
-        <div class="kicker">SME cybersecurity</div>
-        <h1>Social-engineering risk self-assessment</h1>
-        <p>Clean, fast, and human-centred. One question per screen.</p>
-      </div>
-    """, unsafe_allow_html=True)
-    # IMPORTANT: form key MUST NOT equal any session_state key
-    with st.form("frm_profile"):
-        name = st.text_input("Business name", key="pf_name", placeholder="e.g., Café Aurora")
-        colA, colB = st.columns(2)
-        sector = colA.selectbox("Sector", ["Hospitality","Retail","Consulting","Healthcare","Other"], key="pf_sector")
-        staff = colB.number_input("Employees", 1, 500, 12, key="pf_staff")
-        if st.form_submit_button("Start"):
-            st.session_state.user_profile = {"name": (name or "—").strip(), "sector": sector, "staff": staff}
-            st.session_state.page = "quiz"
-            st.session_state.idx = 0
-            st.session_state.answers = {}
+# -----------------------------
+# Sidebar Summary (live)
+# -----------------------------
+with st.sidebar:
+    st.markdown("### Snapshot")
+    st.caption("Auto-fills while you chat.")
+    p = st.session_state.profile
+    st.markdown(
+        f"""
+**Business:** {p.get('business_name') or '—'}  
+**Industry:** {p.get('industry') or '—'}  
+**People:** {p.get('headcount') or '—'}  
+**Years:** {p.get('years') or '—'}  
+**Turnover:** {p.get('turnover') or '—'}  
+**Work mode:** {p.get('work_mode') or '—'}  
+"""
+    )
+    dd = digital_dependency_score(st.session_state.answers)
+    dd_text = "Low" if dd <= 2 else ("Medium" if dd <= 5 else "High")
+    st.markdown("---")
+    st.markdown("**Digital dependency (live):** " + dd_text)
+    st.caption("Based on online sales, data handling, and daily tools.")
 
-def quiz():
-    idx = st.session_state.idx
-    if idx >= len(QUESTIONS):
-        st.session_state.page = "results"; return
+    if st.button("🔁 Restart", use_container_width=True):
+        for k in ["stage", "messages", "profile", "answers", "q_index", "asked_ids"]:
+            if k in st.session_state:
+                del st.session_state[k]
+        st.rerun()
 
-    progress(idx)
-    make_pills(idx)
+# -----------------------------
+# Header
+# -----------------------------
+st.title("💬 Initial Assessment (Conversational)")
+st.write(
+    "We’ll start with a few basics, then move into a short, guided conversation. "
+    "No jargon—just what matters."
+)
 
-    code, qtext, options = QUESTIONS[idx]
-    st.markdown(f'<div class="box"><div class="q">{qtext}</div></div>', unsafe_allow_html=True)
+# -----------------------------
+# Stage 1 – Quick Intake Card
+# -----------------------------
+if st.session_state.stage == "intake":
+    with st.container():
+        st.markdown('<div class="card">', unsafe_allow_html=True)
+        st.subheader("First, the basics (≈2 minutes)")
+        col1, col2 = st.columns(2)
+        with col1:
+            contact_name = st.text_input("Your name", value=st.session_state.profile.get("contact_name", ""))
+            business_name = st.text_input("Business name", value=st.session_state.profile.get("business_name", ""))
+            industry = st.text_input("Industry / core service (e.g., retail, consulting, healthcare)")
+        with col2:
+            years = st.selectbox("How long in business?", ["<1 year","1–3 years","3–10 years","10+ years"])
+            headcount = st.selectbox("How many people (incl. contractors)?", ["Just me","2–5","6–20","21–100","100+"])
+            turnover = st.selectbox("Approx. annual turnover", ["<€100k","€100k–500k","€500k–2M",">€2M"])
 
-    labels = [lbl for (lbl, _score) in options]
-    chosen = st.radio(" ", labels, index=None, label_visibility="collapsed", key=f"radio_{idx}")
-    if chosen is not None:
-        score = next(s for (lbl, s) in options if lbl == chosen)
-        st.session_state.answers[idx] = score
+        work_mode = st.radio("Would you describe your business as mostly…", ["Local & in-person","Online/remote","A mix of both"], horizontal=True)
 
-    col1, col2 = st.columns(2)
-    if col1.button("← Back", use_container_width=True, key=f"back_{idx}", disabled=(idx==0)):
-        st.session_state.idx = max(0, idx-1); st.experimental_rerun()
-    if col2.button("Next →", use_container_width=True, key=f"next_{idx}"):
-        if idx not in st.session_state.answers:
-            st.warning("Please select an option to continue.")
+        c1, c2 = st.columns([1, 2])
+        with c1:
+            proceed = st.button("Start the conversation →", use_container_width=True, type="primary")
+        with c2:
+            st.caption("We’ll use this to tailor the tone and next questions.")
+
+        st.markdown('</div>', unsafe_allow_html=True)
+
+        if proceed:
+            st.session_state.profile.update({
+                "contact_name": contact_name.strip(),
+                "business_name": business_name.strip(),
+                "industry": industry.strip(),
+                "years": years,
+                "headcount": headcount,
+                "turnover": turnover,
+                "work_mode": work_mode
+            })
+            # Seed assistant welcome & first question
+            add_message("assistant", f"Hi {contact_name or 'there'} 👋")
+            add_message("assistant", friendly_intro(st.session_state.profile))
+            st.session_state.stage = "chat"
+            st.session_state.q_index = 0
+            st.rerun()
+
+# -----------------------------
+# Stage 2 – Conversational Chat
+# -----------------------------
+if st.session_state.stage == "chat":
+    # Progress
+    done_count = len(st.session_state.asked_ids)
+    progress_val = done_count / TOTAL_Q
+    st.progress(progress_val, text=phase_progress_label(st.session_state.q_index))
+    st.markdown(f'<div class="progress-label">{done_count} / {TOTAL_Q} answered</div>', unsafe_allow_html=True)
+    st.divider()
+
+    # Render history
+    for m in st.session_state.messages:
+        with st.chat_message("assistant" if m["role"] == "assistant" else "user"):
+            st.markdown(
+                f'<div class="{ "assistant-bubble" if m["role"]=="assistant" else "user-bubble"}">{m["content"]}</div>',
+                unsafe_allow_html=True
+            )
+
+    # Ask current question if not asked
+    if st.session_state.q_index < TOTAL_Q:
+        q = QUESTIONS[st.session_state.q_index]
+
+        # Only show the prompt once
+        if q["id"] not in st.session_state.asked_ids:
+            # Personalize the copy a bit
+            prefix = ""
+            if q["phase"] == "Digital Footprint" and st.session_state.profile.get("industry"):
+                prefix = f"Given you’re in **{st.session_state.profile['industry']}**, "
+            add_message("assistant", f"{prefix}{q['text']}")
+            if q.get("tip"):
+                add_message("assistant", f"_Tip: {q['tip']}_")
+            st.session_state.asked_ids.add(q["id"])
+            st.rerun()
+
+        # Render input controls under the latest assistant message
+        # Choices as quick buttons
+        if q["type"] == "choice":
+            cols = st.columns(3) if len(q["choices"]) <= 3 else st.columns(2)
+            chosen = None
+            # generate deterministic keys
+            for i, choice in enumerate(q["choices"]):
+                col = cols[i % len(cols)]
+                with col:
+                    if st.button(choice, key=f"{q['id']}_{i}", use_container_width=True):
+                        chosen = choice
+            if chosen:
+                add_message("user", chosen)
+                st.session_state.answers[q["id"]] = chosen
+                st.session_state.q_index = next_question_index(st.session_state.q_index)
+                st.rerun()
+
+        elif q["type"] == "multi":
+            # Sequential quick-pick experience
+            st.caption("Click the options you use. Click “Done” when finished.")
+            selected_list = st.session_state.answers.get(q["id"], [])
+            # Lay out choices as buttons that toggle
+            cols = st.columns(2)
+            for i, choice in enumerate(q["choices"]):
+                with cols[i % 2]:
+                    key = f"{q['id']}_toggle_{i}"
+                    active = choice in selected_list
+                    label = ("✓ " if active else "") + choice
+                    if st.button(label, key=key, use_container_width=True):
+                        if active:
+                            selected_list = [c for c in selected_list if c != choice]
+                        else:
+                            selected_list.append(choice)
+                        st.session_state.answers[q["id"]] = selected_list
+                        st.rerun()
+
+            c_done, c_skip = st.columns([1,1])
+            with c_done:
+                if st.button("Done ✅", use_container_width=True, type="primary"):
+                    user_msg = ", ".join(selected_list) if selected_list else "None selected"
+                    add_message("user", user_msg)
+                    st.session_state.q_index = next_question_index(st.session_state.q_index)
+                    st.rerun()
+            with c_skip:
+                if st.button("Skip", use_container_width=True):
+                    add_message("user", "Skipped")
+                    st.session_state.answers[q["id"]] = []
+                    st.session_state.q_index = next_question_index(st.session_state.q_index)
+                    st.rerun()
+
         else:
-            st.session_state.idx = idx + 1; st.experimental_rerun()
+            # Fallback: free text via chat_input
+            prompt = st.chat_input("Type your answer…")
+            if prompt:
+                add_message("user", prompt)
+                st.session_state.answers[q["id"]] = prompt
+                st.session_state.q_index = next_question_index(st.session_state.q_index)
+                st.rerun()
 
-def results():
-    scores = domain_scores(st.session_state.answers)
-    overall = sum(scores.values())/len(DOMAINS)
+    else:
+        # Completed
+        st.success("Nice! You’ve completed the Initial Assessment.")
+        # Friendly, contextual mini-summary
+        p = st.session_state.profile
+        a = st.session_state.answers
+        dd = digital_dependency_score(a)
+        dd_text = "Low" if dd <= 2 else ("Medium" if dd <= 5 else "High")
 
-    st.subheader("Results")
-    st.caption("Traffic-light tiles — clear at a glance.")
-    st.markdown('<div class="tiles">', unsafe_allow_html=True)
-    for title, code in DOMAINS:
-        s = scores[code]; color, tag = label_for(s)
+        st.markdown("#### Quick Summary")
         st.markdown(
-            f'<div class="tile"><div class="badge {color}">{tag}</div>'
-            f'<div style="height:8px"></div>'
-            f'<div style="font-weight:900; font-size:18px">{title}</div>'
-            f'<div class="small">Score: {s:.2f} / 5</div></div>',
-            unsafe_allow_html=True)
-    st.markdown('</div>', unsafe_allow_html=True)
+            f"""
+**Business:** {p.get('business_name') or '—'}  
+**Industry:** {p.get('industry') or '—'}  
+**People:** {p.get('headcount') or '—'} • **Years:** {p.get('years') or '—'} • **Turnover:** {p.get('turnover') or '—'}  
+**Work mode:** {p.get('work_mode') or '—'}  
 
-    st.markdown('<div class="hr"></div>', unsafe_allow_html=True)
-    st.subheader(f"Overall maturity: {overall:.2f} / 5")
+**Digital dependency (derived):** {dd_text}  
+"""
+        )
 
-    st.markdown("**What you're doing well**")
-    for title, code in DOMAINS:
-        st.write(f"- **{title}:** {FEEDBACK[code]['good']}")
-    st.markdown("**What to improve next**")
-    for title, code in DOMAINS:
-        st.write(f"- **{title}:** {FEEDBACK[code]['improve']}")
+        colA, colB = st.columns(2)
+        with colA:
+            st.markdown("**Highlights**")
+            hl = []
+            if a.get("sell_online","").startswith("Yes"):
+                hl.append("Online sales increase reliance on website uptime and payment security.")
+            if "Cloud storage (Google Drive/OneDrive etc.)" in a.get("tools_regular", []):
+                hl.append("Cloud storage is central — access controls and backups matter.")
+            if a.get("data_types") == "Yes":
+                hl.append("You handle personal data — consider privacy and retention basics.")
+            if not hl:
+                hl.append("Operational footprint looks light; next step focuses on essential hygiene.")
+            for h in hl:
+                st.markdown(f"- {h}")
 
-    if st.button("↺ Restart", key="restart"):
-        st.session_state.page = "welcome"; st.session_state.idx = 0; st.session_state.answers = {}; st.experimental_rerun()
+        with colB:
+            st.markdown("**Potential blind spots**")
+            bs = []
+            if a.get("asset_list") in ["Rough idea", "Not really"]:
+                bs.append("No clear list of systems/accounts — hard to secure what you can’t see.")
+            if a.get("breach_contact") == "Not really sure":
+                bs.append("No partner-breach playbook — clarify points of contact and escalation.")
+            if a.get("confidence") in ["Not at all", "Somewhat"]:
+                bs.append("Low confidence — training and basic controls will lift resilience quickly.")
+            if not bs:
+                bs.append("Solid baseline. Next, validate backups, MFA, and incident basics.")
+            for b in bs:
+                st.markdown(f"- {b}")
 
-# ------------------ router ------------------
-if st.session_state.page == "welcome": welcome()
-elif st.session_state.page == "quiz": quiz()
-elif st.session_state.page == "results": results()
+        st.info("Next: move to the Cybersecurity Posture questions (backups, MFA, device locks, training, response).")
+        if st.button("→ Continue to Cybersecurity Posture", type="primary"):
+            st.success("Great—this button would route to Stage 2 in your app.")
