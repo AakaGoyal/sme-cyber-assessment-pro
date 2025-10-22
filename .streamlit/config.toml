@@ -1,10 +1,7 @@
 [theme]
-base="dark"
-primaryColor="#FF5C00"
-backgroundColor="#0a0a0a"
-secondaryBackgroundColor="#121212"
-textColor="#FFFFFF"
-font="sans serif"
-
-[client]
-showErrorDetails=false
+base = "light"
+primaryColor = "#2563EB"
+backgroundColor = "#FFFFFF"
+secondaryBackgroundColor = "#F7F8FA"
+textColor = "#0B1220"
+font = "sans serif"
