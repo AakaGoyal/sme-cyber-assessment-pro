@@ -1,10 +1,10 @@
 import streamlit as st
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Tuple
 
-# -----------------------------
-# Page & Styles
-# -----------------------------
-st.set_page_config(page_title="SME Initial Assessment (Wizard)", page_icon="🧭", layout="wide")
+# =========================================================
+# Page & global styles
+# =========================================================
+st.set_page_config(page_title="SME Assessment Wizard", page_icon="🧭", layout="wide")
 
 CSS = """
 <style>
@@ -15,16 +15,24 @@ CSS = """
 .footer{display:flex;gap:8px}
 .footer .stButton>button{width:100%;border-radius:10px}
 .header-phase{color:#555;font-weight:500}
+.badge{display:inline-block;padding:4px 10px;border-radius:999px;font-weight:600}
+.red{background:#ffe7e7;border:1px solid #ffd0d0;color:#b10000}
+.amber{background:#fff3cd;border:1px solid #ffe59a;color:#7a5b00}
+.green{background:#e6f7e6;border:1px solid #c9efc9;color:#0d6b0d}
+.kpi{border-radius:12px;border:1px solid #eee;padding:14px;background:#fafafa}
+.kpi h4{margin:.1rem 0 .4rem 0}
+ul.tight>li{margin-bottom:.3rem}
 </style>
 """
 st.markdown(CSS, unsafe_allow_html=True)
 
-# -----------------------------
-# Session State
-# -----------------------------
+# =========================================================
+# Session init
+# =========================================================
 def ss_init():
     if "stage" not in st.session_state:
-        st.session_state.stage = "intake"  # intake -> qa -> done
+        # intake -> qa (Initial) -> done_initial -> cyber_qa -> cyber_results
+        st.session_state.stage = "intake"
     if "profile" not in st.session_state:
         st.session_state.profile = {
             "contact_name": "",
@@ -39,12 +47,16 @@ def ss_init():
         st.session_state.answers: Dict[str, Any] = {}
     if "idx" not in st.session_state:
         st.session_state.idx = 0
+    if "cyber_answers" not in st.session_state:
+        st.session_state.cyber_answers: Dict[str, Any] = {}
+    if "cyber_idx" not in st.session_state:
+        st.session_state.cyber_idx = 0
 
 ss_init()
 
-# -----------------------------
-# Question Bank
-# -----------------------------
+# =========================================================
+# Initial Assessment – Question Bank (Stage 1)
+# =========================================================
 QUESTIONS: List[Dict[str, Any]] = [
     # Digital Footprint
     {
@@ -150,9 +162,135 @@ QUESTIONS: List[Dict[str, Any]] = [
 ]
 TOTAL = len(QUESTIONS)
 
-# -----------------------------
+# =========================================================
+# Cybersecurity Posture – Question Bank (Stage 2)
+# =========================================================
+# Scoring rules: each question contributes points toward its domain.
+# We'll normalize domain to 0–100 and map to traffic lights.
+CYBER_QUESTIONS: List[Dict[str, Any]] = [
+    # Access & Accounts
+    {
+        "id":"mfa_all",
+        "domain":"Access & Accounts",
+        "text":"Do all important accounts (email, admin portals, cloud storage, payment) use MFA?",
+        "type":"choice",
+        "choices":["Yes, for all important accounts","Yes, for some","No / not sure"],
+        "weights":[2,1,0],
+        "tip":"MFA blocks >95% of account-takeover attempts."
+    },
+    {
+        "id":"shared_accounts",
+        "domain":"Access & Accounts",
+        "text":"Do people share logins, or does everyone have their own account?",
+        "type":"choice",
+        "choices":["Everyone has their own","Some shared accounts","Mostly shared accounts"],
+        "weights":[2,1,0]
+    },
+    {
+        "id":"admin_rights",
+        "domain":"Access & Accounts",
+        "text":"Are admin rights limited (used only when needed) and audited?",
+        "type":"choice",
+        "choices":["Yes, limited & reviewed","Partly","No / not sure"],
+        "weights":[2,1,0]
+    },
+
+    # Devices
+    {
+        "id":"device_lock",
+        "domain":"Devices",
+        "text":"Are all laptops/phones protected with password/biometrics + auto-lock?",
+        "type":"choice",
+        "choices":["Yes, all","Most","No / not sure"],
+        "weights":[2,1,0]
+    },
+    {
+        "id":"disk_encryption",
+        "domain":"Devices",
+        "text":"Is full-disk encryption enabled on business laptops/desktops?",
+        "type":"choice",
+        "choices":["Yes, on all","Some / in progress","No / not sure"],
+        "weights":[2,1,0]
+    },
+
+    # Data & Backups
+    {
+        "id":"backup_frequency",
+        "domain":"Data & Backups",
+        "text":"How often are business-critical files backed up?",
+        "type":"choice",
+        "choices":["Daily or continuous","Weekly","Rarely / never / not sure"],
+        "weights":[2,1,0],
+        "tip":"Follow 3-2-1: 3 copies, 2 media, 1 offsite/immutable."
+    },
+    {
+        "id":"backup_restore_test",
+        "domain":"Data & Backups",
+        "text":"Do you periodically test restoring backups?",
+        "type":"choice",
+        "choices":["Yes, tested in last 6 months","Longer than 6 months","Never / not sure"],
+        "weights":[2,1,0]
+    },
+
+    # Email & Awareness
+    {
+        "id":"phishing_training",
+        "domain":"Email & Awareness",
+        "text":"Do staff have regular phishing/security awareness training?",
+        "type":"choice",
+        "choices":["Yes, at least yearly","Ad-hoc / once","No / not sure"],
+        "weights":[2,1,0]
+    },
+    {
+        "id":"email_filters",
+        "domain":"Email & Awareness",
+        "text":"Do you have spam/malware filtering and link protection on email?",
+        "type":"choice",
+        "choices":["Yes, managed controls","Basic filtering only","No / not sure"],
+        "weights":[2,1,0]
+    },
+
+    # Updates & AV
+    {
+        "id":"patching",
+        "domain":"Updates & AV",
+        "text":"Are operating systems and apps patched automatically within ~14 days?",
+        "type":"choice",
+        "choices":["Yes, automated","Partly manual","No / not sure"],
+        "weights":[2,1,0]
+    },
+    {
+        "id":"av_edr",
+        "domain":"Updates & AV",
+        "text":"Is reputable antivirus/EDR installed and centrally monitored?",
+        "type":"choice",
+        "choices":["Yes, on all devices","Some devices","No / not sure"],
+        "weights":[2,1,0]
+    },
+
+    # Response & Continuity
+    {
+        "id":"ir_contacts",
+        "domain":"Response & Continuity",
+        "text":"If something goes wrong, do you have a simple incident checklist and contacts?",
+        "type":"choice",
+        "choices":["Yes, documented","Partial / informal","No / not sure"],
+        "weights":[2,1,0]
+    },
+    {
+        "id":"vendor_breach_flow",
+        "domain":"Response & Continuity",
+        "text":"If a vendor is breached, do you know their contact & steps to take?",
+        "type":"choice",
+        "choices":["Yes, clear contacts","Some idea","No / not sure"],
+        "weights":[2,1,0]
+    },
+]
+CYBER_TOTAL = len(CYBER_QUESTIONS)
+
+# =========================================================
 # Helpers
-# -----------------------------
+# =========================================================
 def digital_dependency_score(ans: Dict[str, Any]) -> int:
     s = 0
     if ans.get("sell_online","").startswith("Yes"): s += 2
@@ -164,13 +302,95 @@ def dd_text(v:int) -> str:
     return "Low" if v <= 2 else ("Medium" if v <= 5 else "High")
 
 def reset_all():
-    for k in ["stage","profile","answers","idx"]:
+    for k in ["stage","profile","answers","idx","cyber_answers","cyber_idx"]:
         if k in st.session_state: del st.session_state[k]
     ss_init()
 
-# -----------------------------
-# Sidebar snapshot
-# -----------------------------
+def traffic_light(pct: float) -> Tuple[str, str]:
+    if pct >= 75: return ("green","Good")
+    if pct >= 40: return ("amber","Needs work")
+    return ("red","At risk")
+
+def compute_domain_scores(cyber_ans: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
+    # Sum weights per domain; normalize to 0–100
+    domain_max: Dict[str,int] = {}
+    domain_sum: Dict[str,int] = {}
+    for q in CYBER_QUESTIONS:
+        dom = q["domain"]
+        domain_max[dom] = domain_max.get(dom, 0) + max(q["weights"])
+        # get selected index
+        if q["id"] in cyber_ans:
+            choice = cyber_ans[q["id"]]
+            idx = q["choices"].index(choice) if choice in q["choices"] else -1
+            w = q["weights"][idx] if idx >= 0 else 0
+        else:
+            w = 0
+        domain_sum[dom] = domain_sum.get(dom, 0) + w
+
+    results: Dict[str, Dict[str, Any]] = {}
+    for dom in domain_max:
+        pct = (domain_sum[dom] / domain_max[dom]) * 100 if domain_max[dom] else 0
+        colour, label = traffic_light(pct)
+        results[dom] = {"score": round(pct), "colour": colour, "label": label}
+    return results
+
+def overall_score(domain_scores: Dict[str, Dict[str, Any]]) -> Dict[str, Any]:
+    if not domain_scores: return {"score":0,"colour":"red","label":"At risk"}
+    avg = sum(v["score"] for v in domain_scores.values()) / len(domain_scores)
+    colour, label = traffic_light(avg)
+    return {"score": round(avg), "colour": colour, "label": label}
+
+def add_action_cards(initial: Dict[str, Any], cyber: Dict[str, Any]) -> Tuple[List[str], List[str]]:
+    """Produce 'What you're doing well' and 'Top fixes' bullets from answers."""
+    good, fixes = [], []
+    A = cyber
+
+    def chose(id_, i):  # check selected index
+        q = next(q for q in CYBER_QUESTIONS if q["id"] == id_)
+        sel = A.get(id_, "")
+        return q["choices"].index(sel) == i if sel in q["choices"] else False
+
+    # Goods
+    if chose("mfa_all", 0): good.append("MFA enabled on important accounts.")
+    if chose("disk_encryption", 0): good.append("Full-disk encryption on devices.")
+    if chose("backup_frequency", 0): good.append("Frequent (daily/continuous) backups.")
+    if chose("backup_restore_test", 0): good.append("Backups are restore-tested.")
+    if chose("patching", 0): good.append("Automated patching is in place.")
+    if chose("av_edr", 0): good.append("AV/EDR deployed across devices.")
+    if chose("phishing_training", 0): good.append("Regular phishing/security training.")
+    if chose("ir_contacts", 0): good.append("Incident contacts/checklist documented.")
+
+    # Fixes (ordered by risk)
+    if not chose("mfa_all", 0):
+        fixes.append("Turn on **MFA** for email, cloud storage, accounting, and admin portals (today).")
+    if not chose("backup_frequency", 0):
+        fixes.append("Implement **3-2-1 backups** with at least one **immutable/offsite** copy.")
+    if not chose("disk_encryption", 0):
+        fixes.append("Enable **full-disk encryption** (BitLocker/FileVault) on all laptops/desktops.")
+    if not chose("patching", 0):
+        fixes.append("Enable **automatic updates** for OS and key apps; patch within ~14 days.")
+    if not chose("av_edr", 0):
+        fixes.append("Deploy **reputable AV/EDR** on all devices and ensure it’s updating.")
+    if not chose("ir_contacts", 0):
+        fixes.append("Create a **one-page incident checklist** with internal & vendor contacts.")
+    if not chose("phishing_training", 0):
+        fixes.append("Schedule **annual phishing/awareness training** (15–30 minutes).")
+    if not chose("email_filters", 0):
+        fixes.append("Enable **advanced email filtering** (malware/link protection) in your mail suite.")
+    if not chose("shared_accounts", 0):
+        fixes.append("Stop using **shared accounts**; give each person their own login.")
+    if not chose("admin_rights", 0):
+        fixes.append("Restrict **admin rights**; use separate admin accounts and review quarterly.")
+
+    # Tweak with Initial Assessment context
+    if initial.get("breach_contact") == "Not really sure" and "Create a **one-page incident checklist** with internal & vendor contacts." not in fixes:
+        fixes.insert(0, "Add **vendor breach contacts** to your incident checklist (host, payments, accountant).")
+
+    return good[:8], fixes[:10]
+
+# =========================================================
+# Sidebar (live snapshot)
+# =========================================================
 with st.sidebar:
     st.markdown("### Snapshot")
     p = st.session_state.profile
@@ -185,21 +405,20 @@ f"""**Business:** {p.get('business_name') or '—'}
     )
     st.markdown("---")
     dd = dd_text(digital_dependency_score(st.session_state.answers))
-    st.markdown(f"**Digital dependency (live):** {dd}")
+    st.markdown(f"**Digital dependency (derived):** {dd}")
     st.caption("Derived from online sales, data handling, and daily tools.")
     if st.button("🔁 Restart"):
         reset_all()
         st.rerun()
 
-# -----------------------------
+# =========================================================
 # Header
-# -----------------------------
-st.title("🧭 Initial Assessment")
-st.caption("A short intake followed by a clean, one-question-per-page flow.")
+# =========================================================
+st.title("🧭 SME Self-Assessment Wizard")
 
-# -----------------------------
-# Stage: Intake
-# -----------------------------
+# =========================================================
+# Stage 1: Intake
+# =========================================================
 if st.session_state.stage == "intake":
     st.markdown('<div class="card">', unsafe_allow_html=True)
     st.subheader("First, tell us a bit about the business (≈2 minutes)")
@@ -216,7 +435,7 @@ if st.session_state.stage == "intake":
 
     c1, c2 = st.columns([1,2])
     with c1:
-        proceed = st.button("Start", type="primary", use_container_width=True)
+        proceed = st.button("Start Initial Assessment", type="primary", use_container_width=True)
     with c2:
         st.caption("We’ll tailor the next questions based on this.")
 
@@ -236,33 +455,26 @@ if st.session_state.stage == "intake":
         st.session_state.idx = 0
         st.rerun()
 
-# -----------------------------
-# Stage: One-question-per-page (QA)
-# -----------------------------
+# =========================================================
+# Stage 1: One-question-per-page (Initial Assessment)
+# =========================================================
 if st.session_state.stage == "qa":
     idx = st.session_state.idx
     q = QUESTIONS[idx]
 
-    # Progress
-    st.progress((idx)/TOTAL, text=f"Now: {q['phase']}  •  Question {idx+1} of {TOTAL}")
+    st.progress((idx)/TOTAL, text=f"Initial Assessment • {q['phase']} • {idx+1}/{TOTAL}")
 
-    # Question Card
     st.markdown('<div class="card">', unsafe_allow_html=True)
     st.markdown(f'<div class="qtitle">{q["text"]}</div>', unsafe_allow_html=True)
-
-    # Optional tip (collapsible)
     if q.get("tip"):
         with st.expander("Why this matters"):
             st.markdown(q["tip"])
 
-    # Input control
     curr_val = st.session_state.answers.get(q["id"])
 
     if q["type"] == "choice":
-        # Render radio with current selection (if any)
         answer = st.radio("Select one:", q["choices"], index=q["choices"].index(curr_val) if curr_val in q["choices"] else 0, key=f"radio_{q['id']}")
         st.session_state.answers[q["id"]] = answer
-
     elif q["type"] == "multi":
         sel = set(curr_val or [])
         cols = st.columns(2)
@@ -272,40 +484,35 @@ if st.session_state.stage == "qa":
                 if st.checkbox(opt, value=(opt in sel), key=f"chk_{q['id']}_{i}"):
                     updated.append(opt)
         st.session_state.answers[q["id"]] = updated
-
     else:
         txt = st.text_input("Your answer", value=curr_val or "")
         st.session_state.answers[q["id"]] = txt
 
     st.markdown('</div>', unsafe_allow_html=True)
 
-    # Navigation
     col_prev, col_skip, col_next = st.columns([1,1,1])
     with col_prev:
-        disabled_prev = idx == 0
-        if st.button("← Back", use_container_width=True, disabled=disabled_prev):
-            st.session_state.idx = max(idx - 1, 0)
-            st.rerun()
+        if st.button("← Back", use_container_width=True, disabled=(idx==0)):
+            st.session_state.idx = max(idx - 1, 0); st.rerun()
     with col_skip:
         if st.button("Skip", use_container_width=True):
-            # keep whatever current state is; mark as skipped if empty
             if q["type"] == "multi" and not st.session_state.answers.get(q["id"]):
                 st.session_state.answers[q["id"]] = []
             st.session_state.idx = min(idx + 1, TOTAL - 1)
             if st.session_state.idx == TOTAL - 1 and idx == TOTAL - 1:
-                st.session_state.stage = "done"
+                st.session_state.stage = "done_initial"
             st.rerun()
     with col_next:
         if st.button("Save & Next →", type="primary", use_container_width=True):
             st.session_state.idx = idx + 1
             if st.session_state.idx >= TOTAL:
-                st.session_state.stage = "done"
+                st.session_state.stage = "done_initial"
             st.rerun()
 
-# -----------------------------
-# Stage: Done (Summary)
-# -----------------------------
-if st.session_state.stage == "done":
+# =========================================================
+# Stage 1: Summary + Continue
+# =========================================================
+if st.session_state.stage == "done_initial":
     st.success("Initial Assessment complete.")
     p, a = st.session_state.profile, st.session_state.answers
     dd = dd_text(digital_dependency_score(a))
@@ -348,6 +555,101 @@ f"""**Business:** {p.get('business_name') or '—'}
             blindspots.append("Solid baseline. Next, validate backups, MFA, and incident basics.")
         for b in blindspots: st.markdown(f"- {b}")
 
-    st.info("Next: Continue to the Cybersecurity Posture assessment (traffic-light results + action cards).")
+    st.info("Next: Cybersecurity Posture (controls like MFA, backups, patching, awareness, incident response).")
     if st.button("→ Continue to Cybersecurity Posture", type="primary"):
-        st.success("This will route to Stage 2 in your app.")
+        st.session_state.stage = "cyber_qa"
+        st.session_state.cyber_idx = 0
+        st.rerun()
+
+# =========================================================
+# Stage 2: Cybersecurity Posture – Wizard
+# =========================================================
+if st.session_state.stage == "cyber_qa":
+    i = st.session_state.cyber_idx
+    q = CYBER_QUESTIONS[i]
+    st.progress(i/CYBER_TOTAL, text=f"Cybersecurity Posture • {q['domain']} • {i+1}/{CYBER_TOTAL}")
+
+    st.markdown('<div class="card">', unsafe_allow_html=True)
+    st.markdown(f'<div class="qtitle">{q["text"]}</div>', unsafe_allow_html=True)
+    if q.get("tip"):
+        with st.expander("Why this matters"):
+            st.markdown(q["tip"])
+
+    curr = st.session_state.cyber_answers.get(q["id"])
+    answer = st.radio("Select one:", q["choices"], index=q["choices"].index(curr) if curr in q["choices"] else 0, key=f"cy_radio_{q['id']}")
+    st.session_state.cyber_answers[q["id"]] = answer
+    st.markdown('</div>', unsafe_allow_html=True)
+
+    col_prev, col_skip, col_next = st.columns([1,1,1])
+    with col_prev:
+        if st.button("← Back", use_container_width=True, disabled=(i==0)):
+            st.session_state.cyber_idx = max(i-1,0); st.rerun()
+    with col_skip:
+        if st.button("Skip", use_container_width=True):
+            st.session_state.cyber_idx = min(i+1, CYBER_TOTAL-1)
+            if st.session_state.cyber_idx == CYBER_TOTAL-1 and i == CYBER_TOTAL-1:
+                st.session_state.stage = "cyber_results"
+            st.rerun()
+    with col_next:
+        if st.button("Save & Next →", type="primary", use_container_width=True):
+            st.session_state.cyber_idx = i + 1
+            if st.session_state.cyber_idx >= CYBER_TOTAL:
+                st.session_state.stage = "cyber_results"
+            st.rerun()
+
+# =========================================================
+# Stage 2: Results – Traffic Lights + Action Cards
+# =========================================================
+if st.session_state.stage == "cyber_results":
+    st.success("Cybersecurity Posture assessment complete.")
+    scores = compute_domain_scores(st.session_state.cyber_answers)
+    overall = overall_score(scores)
+
+    def badge(colour, text):
+        return f'<span class="badge {colour}">{text}</span>'
+
+    # Overall KPI
+    st.markdown('<div class="kpi">', unsafe_allow_html=True)
+    st.markdown(f"#### Overall posture: {badge(overall['colour'], overall['label'])}  •  **{overall['score']}%**", unsafe_allow_html=True)
+    st.caption("Scores reflect practical control coverage and are intended to guide priorities, not replace audits.")
+    st.markdown('</div>', unsafe_allow_html=True)
+
+    # Domain KPIs
+    dcols = st.columns(3)
+    doms = list(scores.items())
+    for idx, (dom, data) in enumerate(doms):
+        with dcols[idx % 3]:
+            st.markdown('<div class="kpi">', unsafe_allow_html=True)
+            st.markdown(f"**{dom}**")
+            st.markdown(f"{badge(data['colour'], data['label'])} • **{data['score']}%**", unsafe_allow_html=True)
+            st.markdown('</div>', unsafe_allow_html=True)
+
+    st.markdown("---")
+
+    good, fixes = add_action_cards(st.session_state.answers, st.session_state.cyber_answers)
+
+    colA, colB = st.columns(2)
+    with colA:
+        st.markdown("### ✅ What you’re doing well")
+        if good:
+            st.markdown("<ul class='tight'>" + "".join([f"<li>{g}</li>" for g in good]) + "</ul>", unsafe_allow_html=True)
+        else:
+            st.write("We didn’t detect specific strengths yet — once you implement the fixes below, this list will grow.")
+
+    with colB:
+        st.markdown("### 🛠 Top recommended fixes")
+        if fixes:
+            st.markdown("<ul class='tight'>" + "".join([f"<li>{f}</li>" for f in fixes]) + "</ul>", unsafe_allow_html=True)
+        else:
+            st.write("Great baseline! Keep policies current and review quarterly.")
+
+    st.markdown("---")
+    st.info("Tip: capture this page as PDF for your records (or wire a PDF export).")
+
+    c1, c2 = st.columns([1,1])
+    with c1:
+        if st.button("← Review answers"):
+            st.session_state.stage = "cyber_qa"; st.session_state.cyber_idx = 0; st.rerun()
+    with c2:
+        if st.button("Restart whole assessment"):
+            reset_all(); st.rerun()
