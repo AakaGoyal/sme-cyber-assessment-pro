@@ -1,4 +1,4 @@
-# new_app.py — SME Cyber Risk Self-Assessment (clean light UI)
+# new_app.py — SME Cyber Risk Self-Assessment (clean light UI, fixed keys)
 # Only dependency: streamlit
 
 import streamlit as st
@@ -73,7 +73,7 @@ html, body { background: var(--bg) !important; color: var(--text); }
 if "page" not in st.session_state: st.session_state.page = "welcome"
 if "answers" not in st.session_state: st.session_state.answers = {}   # {q_index: score}
 if "idx" not in st.session_state: st.session_state.idx = 0
-if "profile" not in st.session_state: st.session_state.profile = {}
+if "user_profile" not in st.session_state: st.session_state.user_profile = {}
 
 DOMAINS = [
     ("Governance & Risk","GOV"), ("Identity & Access Management","IAM"),
@@ -188,13 +188,14 @@ def welcome():
         <p>Clean, fast, and human-centred. One question per screen.</p>
       </div>
     """, unsafe_allow_html=True)
-    with st.form("profile"):
-        name = st.text_input("Business name", placeholder="e.g., Café Aurora")
+    # IMPORTANT: form key MUST NOT equal any session_state key
+    with st.form("frm_profile"):
+        name = st.text_input("Business name", key="pf_name", placeholder="e.g., Café Aurora")
         colA, colB = st.columns(2)
-        sector = colA.selectbox("Sector", ["Hospitality","Retail","Consulting","Healthcare","Other"])
-        staff = colB.number_input("Employees", 1, 500, 12)
+        sector = colA.selectbox("Sector", ["Hospitality","Retail","Consulting","Healthcare","Other"], key="pf_sector")
+        staff = colB.number_input("Employees", 1, 500, 12, key="pf_staff")
         if st.form_submit_button("Start"):
-            st.session_state.profile = {"name": (name or "—").strip(), "sector": sector, "staff": staff}
+            st.session_state.user_profile = {"name": (name or "—").strip(), "sector": sector, "staff": staff}
             st.session_state.page = "quiz"
             st.session_state.idx = 0
             st.session_state.answers = {}
@@ -204,27 +205,22 @@ def quiz():
     if idx >= len(QUESTIONS):
         st.session_state.page = "results"; return
 
-    # progress + pills
     progress(idx)
     make_pills(idx)
 
-    # current question
     code, qtext, options = QUESTIONS[idx]
     st.markdown(f'<div class="box"><div class="q">{qtext}</div></div>', unsafe_allow_html=True)
 
-    # radio (as cards)
     labels = [lbl for (lbl, _score) in options]
-    chosen = st.radio(" ", labels, index=None, label_visibility="collapsed")
+    chosen = st.radio(" ", labels, index=None, label_visibility="collapsed", key=f"radio_{idx}")
     if chosen is not None:
-        # map label to score
         score = next(s for (lbl, s) in options if lbl == chosen)
         st.session_state.answers[idx] = score
 
-    # nav
     col1, col2 = st.columns(2)
-    if col1.button("← Back", use_container_width=True, key=f"back_{idx}", help="Previous question", disabled=(idx==0)):
+    if col1.button("← Back", use_container_width=True, key=f"back_{idx}", disabled=(idx==0)):
         st.session_state.idx = max(0, idx-1); st.experimental_rerun()
-    if col2.button("Next →", use_container_width=True, key=f"next_{idx}", help="Next question"):
+    if col2.button("Next →", use_container_width=True, key=f"next_{idx}"):
         if idx not in st.session_state.answers:
             st.warning("Please select an option to continue.")
         else:
@@ -257,7 +253,7 @@ def results():
     for title, code in DOMAINS:
         st.write(f"- **{title}:** {FEEDBACK[code]['improve']}")
 
-    if st.button("↺ Restart"):
+    if st.button("↺ Restart", key="restart"):
         st.session_state.page = "welcome"; st.session_state.idx = 0; st.session_state.answers = {}; st.experimental_rerun()
 
 # ------------------ router ------------------
