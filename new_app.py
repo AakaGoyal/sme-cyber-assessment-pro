@@ -1,77 +1,66 @@
+# new_app.py – SME Cyber Risk Self-Assessment (Light UI version)
+# Streamlit + FPDF
+
 import streamlit as st
 from fpdf import FPDF
 from datetime import datetime
 
 st.set_page_config(page_title="SME Cyber Risk Self-Assessment", page_icon="🛡️", layout="centered")
 
-# ---------------- THEME (light) ----------------
-LIGHT_CSS = """
+# ---------------- LIGHT THEME & STYLES ----------------
+st.markdown("""
 <style>
 :root{
-  --bg:#ffffff; --surface:#f7f8fa; --surface2:#ffffff; --text:#0b1220; --muted:#6b7280;
-  --primary:#4F46E5; /* indigo-600 */
-  --ring: rgba(79,70,229,.35);
-  --border:#e6e7eb;
+  --bg:#ffffff; --surface:#f8f9fa; --surface2:#ffffff;
+  --text:#0b1220; --muted:#586072; --primary:#2563EB; --border:#e6e7eb;
+  --ring: rgba(37,99,235,.35);
 }
-.block-container{padding-top:1.6rem!important; max-width:920px;}
-/* Header hero */
+.block-container{padding-top:1.4rem!important; max-width:960px;}
+body{background:#fff !important; color:var(--text);}
+*{font-size:16px;}
+/* Hero */
 .hero{background:var(--surface2); border:1px solid var(--border); border-radius:24px; padding:28px 22px;}
-.kicker{font-size:.78rem; letter-spacing:.14em; color:var(--muted); text-transform:uppercase; margin-bottom:.25rem;}
-.hero h1{font-size:2rem; line-height:1.2; margin:0; color:var(--text);}
-.hero p{margin:.35rem 0 0; color:#60646c;}
-
-/* Progress pills */
-.pills{display:flex; flex-wrap:wrap; gap:8px; margin:14px 0 6px;}
-.pill{background:#f0f1f5; color:#2e3138; border:1px solid #eceff3; border-radius:999px; padding:6px 10px; font-weight:600; font-size:.85rem;}
+.kicker{font-size:.85rem; letter-spacing:.14em; color:var(--muted); text-transform:uppercase; margin-bottom:.25rem;}
+.hero h1{font-size:2.3rem; line-height:1.25; margin:0; color:var(--text);}
+.hero p{margin:.5rem 0 0; color:#505460; font-size:1rem;}
+/* Pills */
+.pills{display:flex; flex-wrap:wrap; gap:8px; margin:18px 0 10px;}
+.pill{background:#eef0f5; color:#2e3138; border:1px solid #e6e7eb; border-radius:999px; padding:8px 14px; font-weight:700; font-size:.95rem;}
 .pill.active{background:var(--primary); color:#fff; border-color:var(--primary);}
-.pill.done{background:#e8f5ee; color:#117a3a; border-color:#d6f0e1;}
-.pill span{opacity:.85}
-
+.pill.done{background:#e9f7ef; color:#106b35; border-color:#d5efdf;}
 /* Question */
-.qwrap{background:var(--surface); border:1px solid var(--border); border-radius:22px; padding:22px 18px; margin-top:10px;}
-.qtitle{font-size:1.35rem; color:var(--text); font-weight:800;}
-.qsubtitle{color:#3f4248; font-size:1rem; margin-top:6px;}
-
+.qwrap{background:var(--surface); border:1px solid var(--border); border-radius:22px; padding:24px 18px; margin-top:10px;}
+.qtitle{font-size:1.6rem; line-height:1.35; color:var(--text); font-weight:800;}
 /* Options grid -> rounded cards */
-.grid{display:grid; grid-template-columns:1fr; gap:12px; margin-top:14px;}
-@media(min-width:820px){ .grid{grid-template-columns:1fr 1fr;} }
-
-.opt button{
-  width:100%; background:var(--surface2); color:var(--text); border:1px solid var(--border);
-  border-radius:18px; padding:16px 14px; text-align:left; font-weight:700;
-  display:flex; align-items:center; gap:12px; transition:.15s ease; box-shadow:none;
+.grid{display:grid; grid-template-columns:1fr; gap:14px; margin-top:16px;}
+@media(min-width:860px){ .grid{grid-template-columns:1fr 1fr;} }
+.stButton > button{
+  width:100%; min-height:88px; border-radius:18px; border:1px solid var(--border);
+  background:var(--surface2); color:var(--text); font-weight:800; text-align:left; padding:18px 16px;
+  box-shadow:none; transition:.15s ease;
 }
-.opt button:hover{transform:translateY(-1px); border-color:#dfe2e6;}
-.opt button:focus{outline:4px solid var(--ring); border-color:var(--primary);}
-.opt .dot{
-  width:18px; height:18px; border-radius:999px; border:2px solid #cfd3da; display:inline-block; position:relative;
-}
-.opt.selected .dot{ border-color:var(--primary); }
-.opt.selected .dot::after{
-  content:''; position:absolute; inset:3px; border-radius:999px; background:var(--primary);
-}
-/* Nav buttons */
-.nav{display:flex; gap:10px; justify-content:space-between; margin-top:14px;}
-.btn{border:1px solid var(--border); background:#fff; color:var(--text); padding:10px 16px; border-radius:999px; font-weight:800;}
-.btn.primary{background:var(--text); color:#fff; border-color:#0b1220;}
-.btn.primary:hover{filter:brightness(0.95);}
-
-/* Result tiles */
-.tiles{display:grid; grid-template-columns:1fr; gap:12px; margin-top:12px;}
-@media(min-width:820px){ .tiles{grid-template-columns:repeat(3,1fr);} }
-.tile{background:var(--surface2); border:1px solid var(--border); border-radius:18px; padding:16px;}
-.badge{font-weight:800; font-size:.8rem; padding:4px 10px; border-radius:999px; display:inline-block;}
+.stButton > button:hover{transform:translateY(-1px); border-color:#d0d3da;}
+.stButton > button:focus{outline:4px solid var(--ring); border-color:var(--primary);}
+.nav{display:flex; gap:10px; justify-content:space-between; margin-top:20px;}
+.nav .btn{border:1px solid var(--border); background:#fff; color:var(--text); padding:12px 18px; border-radius:999px; font-weight:800; font-size:1rem;}
+.nav .btn.primary{background:var(--primary); color:#fff; border-color:var(--primary);}
+.nav .btn.primary:hover{filter:brightness(0.95);}
+/* Results */
+.tiles{display:grid; grid-template-columns:1fr; gap:14px; margin-top:12px;}
+@media(min-width:860px){ .tiles{grid-template-columns:repeat(3,1fr);} }
+.tile{background:#fff; border:1px solid var(--border); border-radius:18px; padding:18px;}
+.badge{font-weight:800; font-size:.9rem; padding:6px 12px; border-radius:999px; display:inline-block;}
 .badge.red{background:#fee2e2; color:#991b1b;}
 .badge.orange{background:#ffedd5; color:#9a3412;}
 .badge.yellow{background:#fef9c3; color:#854d0e;}
 .badge.green{background:#dcfce7; color:#166534;}
-.hr{height:1px; background:linear-gradient(90deg,transparent,#eceff3,transparent); margin:16px 0;}
-.small{color:var(--muted); font-size:.9rem;}
+.hr{height:1px; background:linear-gradient(90deg,transparent,#eceff3,transparent); margin:18px 0;}
+.small{color:var(--muted); font-size:1rem;}
+label, .stTextInput input, .stSelectbox div, .stNumberInput input { font-size:1rem !important; }
 </style>
-"""
-st.markdown(LIGHT_CSS, unsafe_allow_html=True)
+""", unsafe_allow_html=True)
 
-# ---------------- State ----------------
+# ---------------- SESSION STATE ----------------
 if "page" not in st.session_state: st.session_state.page = "landing"
 if "profile" not in st.session_state: st.session_state.profile = {}
 if "answers" not in st.session_state: st.session_state.answers = {}
@@ -163,13 +152,13 @@ def label_for(score):
     if score < 4: return "yellow","🟡 Defined"
     return "green","🟢 Managed/Optimised"
 
-# ------------- Screens -------------
+# ------------- UI SCREENS -------------
 def landing():
     st.markdown("""
     <div class="hero">
       <div class="kicker">SME cybersecurity</div>
       <h1>Social-engineering risk self-assessment</h1>
-      <p>Simple, human-centred and fast. One question per screen.</p>
+      <p>Simple, human-centred, and fast. One question per screen.</p>
     </div>
     """, unsafe_allow_html=True)
     with st.form("frm_profile"):
@@ -183,19 +172,12 @@ def landing():
         st.session_state.page = "q"
 
 def pills(current_idx):
-    # render domain progress pills (done/active/next)
-    total = len(QUESTIONS)
-    # figure current domain
-    code_now = QUESTIONS[min(current_idx, total-1)][0]
+    code_now = QUESTIONS[min(current_idx, len(QUESTIONS)-1)][0]
     html = ['<div class="pills">']
     for title, code in DOMAINS:
         cls = "pill"
         if code == code_now: cls += " active"
-        # mark done if every question of that domain already answered
-        done = True
-        for i,(c,_,_) in enumerate(QUESTIONS):
-            if c==code and i not in st.session_state.answers:
-                done=False; break
+        done = all(i in st.session_state.answers for i,(c,_,_) in enumerate(QUESTIONS) if c==code)
         if done and code != code_now: cls += " done"
         html.append(f'<div class="{cls}">{title}</div>')
     html.append("</div>")
@@ -205,28 +187,14 @@ def question():
     idx = st.session_state.idx
     if idx >= len(QUESTIONS):
         st.session_state.page = "results"; return
-
     code, qtext, options = QUESTIONS[idx]
     pills(idx)
-
-    st.markdown('<div class="qwrap">', unsafe_allow_html=True)
-    st.markdown(f'<div class="qtitle">{qtext}</div>', unsafe_allow_html=True)
-
+    st.markdown(f'<div class="qwrap"><div class="qtitle">{qtext}</div></div>', unsafe_allow_html=True)
     st.markdown('<div class="grid">', unsafe_allow_html=True)
-    cols = st.columns(2)
     for i,(label,score) in enumerate(options):
-        key = f"opt_{idx}_{i}"
-        selected = (st.session_state.answers.get(idx)==score)
-        classes = "opt selected" if selected else "opt"
-        with cols[i%2]:
-            # we still use a button for speed; style gives card+radio feel
-            clicked = st.button(f"  {label}", key=key, use_container_width=True)
-            # re-render the dot overlay
-            st.markdown(f'<div class="{classes}"><span class="dot"></span></div>', unsafe_allow_html=True)
-            if clicked:
-                st.session_state.answers[idx] = score
+        if st.button(label, key=f"opt_{idx}_{i}", use_container_width=True):
+            st.session_state.answers[idx] = score
     st.markdown('</div>', unsafe_allow_html=True)
-
     colL, colR = st.columns(2)
     if colL.button("← Back", use_container_width=True, disabled=(idx==0)):
         st.session_state.idx = max(0, idx-1); st.experimental_rerun()
@@ -235,7 +203,6 @@ def question():
             st.warning("Please select an option to continue.")
         else:
             st.session_state.idx = idx+1; st.experimental_rerun()
-    st.markdown('</div>', unsafe_allow_html=True)  # qwrap
 
 def results():
     scores = domain_scores(st.session_state.answers)
@@ -258,12 +225,10 @@ def results():
     for title,code in DOMAINS: st.write(f"- **{title}:** {FEEDBACK[code]['good']}")
     st.markdown("**What to improve next**")
     for title,code in DOMAINS: st.write(f"- **{title}:** {FEEDBACK[code]['improve']}")
-
-    col1, col2 = st.columns(2)
-    if col1.button("↺ Restart"):
+    if st.button("↺ Restart"):
         st.session_state.page="landing"; st.session_state.idx=0; st.session_state.answers={}; st.experimental_rerun()
 
-# ------------- Router -------------
+# ------------- ROUTER -------------
 if st.session_state.page=="landing": landing()
 elif st.session_state.page=="q": question()
 elif st.session_state.page=="results": results()
