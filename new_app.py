@@ -38,7 +38,7 @@ def ss_init():
         st.session_state.profile = {
             "contact_name": "",
             "business_name": "",
-            "industry": {"value":"", "other":""},  # store value + custom other
+            "industry": {"value":"", "other":""},  # value + custom
             "years": "",
             "headcount": "",
             "turnover": "",
@@ -125,7 +125,6 @@ TOOLS_EXPANDED = [
     "Marketing tool (Mailchimp/HubSpot)",
 ]
 
-# Base questions with metadata
 BASE_QUESTIONS: List[Dict[str, Any]] = [
     # Digital Footprint
     {
@@ -513,7 +512,9 @@ if st.session_state.stage == "intake":
         contact = st.text_input("Your name", value=st.session_state.profile.get("contact_name",""))
         bname   = st.text_input("Business name", value=st.session_state.profile.get("business_name",""))
         # Industry typeahead + other
-        industry_sel = st.selectbox("Industry / core service", options=INDUSTRY_OPTIONS, index=INDUSTRY_OPTIONS.index(st.session_state.profile["industry"]["value"]) if st.session_state.profile["industry"]["value"] in INDUSTRY_OPTIONS else len(INDUSTRY_OPTIONS)-1)
+        current_val = st.session_state.profile["industry"]["value"]
+        init_index = INDUSTRY_OPTIONS.index(current_val) if current_val in INDUSTRY_OPTIONS else len(INDUSTRY_OPTIONS)-1
+        industry_sel = st.selectbox("Industry / core service", options=INDUSTRY_OPTIONS, index=init_index)
         industry_other = ""
         if industry_sel == "Other (please specify)":
             industry_other = st.text_input("Type your industry / service", value=st.session_state.profile["industry"].get("other",""))
@@ -551,24 +552,30 @@ if st.session_state.stage == "intake":
 PLACEHOLDER = "— Select one —"
 
 def render_choice_with_other(qid: str, options: List[str], allow_other: bool, current: Any):
-    opts = [PLACEHOLDER] + options
-    # If current stored is dict (other), prefill appropriately
+    """
+    Safe radio renderer with placeholder and optional 'Other (please specify)'.
+    - Keeps indices in range.
+    - Prefills comment if returning to a previously saved 'Other'.
+    """
+    base = options[:]
+    if allow_other and "Other (please specify)" not in base:
+        base.append("Other (please specify)")
+    opts = [PLACEHOLDER] + base
+
+    # compute safe pre-selected index
     pre_idx = 0
-    if isinstance(current, dict) and current.get("value") == "Other (please specify)":
-        pre_idx = len(opts)  # temporarily handle elsewhere
-    elif current in opts:
+    if isinstance(current, dict) and current.get("value") in opts:
+        pre_idx = opts.index(current["value"])
+    elif isinstance(current, str) and current in opts:
         pre_idx = opts.index(current)
+
     selected = st.radio("Select one:", opts, index=pre_idx, key=f"radio_{qid}")
+
     other_text = ""
-    if allow_other:
-        if selected == PLACEHOLDER:
-            pass
-        else:
-            # Add 'Other' line under radios
-            if "Other (please specify)" not in options:
-                st.write("")
-            if selected == "Other (please specify)":
-                other_text = st.text_input("Please specify", value=(current.get("comment","") if isinstance(current, dict) else ""))
+    if allow_other and selected == "Other (please specify)":
+        preset = current.get("comment", "") if isinstance(current, dict) else ""
+        other_text = st.text_input("Please specify", value=preset)
+
     return selected, other_text
 
 # =========================================================
@@ -593,17 +600,11 @@ if st.session_state.stage == "qa":
     curr_val = answers.get(q["id"])
 
     if q["type"] == "choice":
-        # Append global Other if enabled
-        choices = q["choices"][:]
-        if q.get("allow_other"):
-            if "Other (please specify)" not in choices:
-                choices.append("Other (please specify)")
-        sel, other_text = render_choice_with_other(q["id"], choices, q.get("allow_other", False), curr_val)
-        # Persist selection
+        sel, other_text = render_choice_with_other(q["id"], q["choices"], q.get("allow_other", False), curr_val)
         if sel == "Other (please specify)":
             answers[q["id"]] = {"value": sel, "comment": other_text}
         elif sel == PLACEHOLDER:
-            answers[q["id"]] = sel  # placeholder stored; Next will still move, but user can change
+            answers.pop(q["id"], None)  # don't store placeholder
         else:
             answers[q["id"]] = sel
 
@@ -626,26 +627,18 @@ if st.session_state.stage == "qa":
     # Navigation
     col_prev, col_skip, col_next = st.columns([1,1,1])
     with col_prev:
-        st.button("← Back", use_container_width=True, disabled=(idx==0), on_click=lambda: st.session_state.update(idx=max(idx-1,0)))
+        st.button("← Back", use_container_width=True, disabled=(idx==0),
+                  on_click=lambda: st.session_state.update(idx=max(idx-1,0)))
     with col_skip:
         if st.button("Skip", use_container_width=True):
             st.session_state.idx = min(idx + 1, len(Q) - 1)
-            if st.session_state.idx >= len(Q) - 0:
-                # Refresh visibility may change
-                pass
             st.rerun()
     with col_next:
         if st.button("Next →", type="primary", use_container_width=True):
-            # Recalculate visibility in case this answer changed branching
             new_Q = visible_questions(st.session_state.answers)
-            # Move to next logical index in new_Q relative to current question id
             current_id = q["id"]
             ids = [qq["id"] for qq in new_Q]
-            if current_id in ids:
-                pos = ids.index(current_id) + 1
-            else:
-                # if current got hidden by logic, find the next visible based on prior index
-                pos = min(idx + 1, len(new_Q))
+            pos = ids.index(current_id) + 1 if current_id in ids else min(idx + 1, len(new_Q))
             if pos >= len(new_Q):
                 st.session_state.stage = "done_initial"
             else:
@@ -691,7 +684,7 @@ f"""**Business:** {p.get('business_name') or '—'}
     with colB:
         st.markdown("**Potential blind spots**")
         blindspots = []
-        if a.get("asset_list") in ["Rough idea","Not really", {"value":"Other (please specify)"}]:
+        if a.get("asset_list") in ["Rough idea","Not really"]:
             blindspots.append("No clear list of systems/accounts — hard to secure what you can’t see.")
         if a.get("third_parties") == "Yes" and a.get("breach_contact") == "Not really sure":
             blindspots.append("No partner-breach playbook — clarify contacts and escalation.")
@@ -720,14 +713,15 @@ if st.session_state.stage == "cyber_qa":
         with st.expander("Why this matters"):
             st.markdown(q["tip"])
 
-    curr = st.session_state.cyber_answers.get(q["id"], PLACEHOLDER)
+    curr = st.session_state.cyber_answers.get(q["id"], "— Select one —")
     answer = st.radio("Select one:", q["choices"], index=q["choices"].index(curr) if curr in q["choices"] else 0, key=f"cy_radio_{q['id']}")
     st.session_state.cyber_answers[q["id"]] = answer
     st.markdown('</div>', unsafe_allow_html=True)
 
     col_prev, col_skip, col_next = st.columns([1,1,1])
     with col_prev:
-        st.button("← Back", use_container_width=True, disabled=(i==0), on_click=lambda: st.session_state.update(cyber_idx=max(i-1,0)))
+        st.button("← Back", use_container_width=True, disabled=(i==0),
+                  on_click=lambda: st.session_state.update(cyber_idx=max(i-1,0)))
     with col_skip:
         if st.button("Skip", use_container_width=True):
             st.session_state.cyber_idx = min(i+1, CYBER_TOTAL-1)
